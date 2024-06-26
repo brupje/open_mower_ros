@@ -28,8 +28,9 @@ COPY --link ./ /opt/open_mower_ros
 
 WORKDIR /opt/open_mower_ros
 
+
+RUN git submodule update --init --recursive --remote
 RUN git pull --recurse-submodules
-RUN git submodule update --init --recursive
 
 ADD ./docker/patch.sh /tmp/patch.sh
 RUN /tmp/patch.sh
