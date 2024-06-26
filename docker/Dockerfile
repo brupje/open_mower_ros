@@ -101,7 +101,7 @@ RUN bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && cd /opt/open_mower_ros/sr
 
 RUN echo "export OM_SOFTWARE_VERSION=$(git describe --tags || git describe --always || echo "v0.0.0")" > version_info.env
 
-ADD docker/openmower_entrypoint.sh /openmower_entrypoint.sh
+ADD openmower_entrypoint.sh /openmower_entrypoint.sh
 RUN chmod +x /openmower_entrypoint.sh
 
 ENTRYPOINT ["/openmower_entrypoint.sh"]
