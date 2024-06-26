@@ -30,7 +30,7 @@ WORKDIR /opt/open_mower_ros
 
 RUN git submodule update --init --recursive
 
-ADD patch.sh /tmp/patch.sh
+ADD ./docker/patch.sh /tmp/patch.sh
 RUN /tmp/patch.sh
 
 
