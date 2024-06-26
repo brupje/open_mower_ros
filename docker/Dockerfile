@@ -30,6 +30,9 @@ WORKDIR /opt/open_mower_ros
 
 RUN git submodule update --init --recursive
 
+ADD patch.sh /tmp/patch.sh
+RUN /tmp/patch.sh
+
 
 # Get slic3r_coverage_planner and build that. We will pull the finished install folder from this.
 # This stage should cache most of the time, that's why it's not derived from the fetch stage, but copies stuff instead.
