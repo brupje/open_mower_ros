@@ -99,4 +99,4 @@ COPY ./docker/openmower_entrypoint.sh /openmower_entrypoint.sh
 RUN chmod +x /openmower_entrypoint.sh
 
 ENTRYPOINT ["/openmower_entrypoint.sh"]
-CMD ["bash", "-c", "service nginx start; service mosquitto start; roslaunch open_mower open_mower.launch --screen"]
+CMD ["bash", "-c", "service nginx start; service mosquitto start; roslaunch open_mower open_mower.launch --wait --screen"]
