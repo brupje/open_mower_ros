@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install --yes \
     rm -rf /var/lib/apt/lists/*
 
 # Install our configs
-RUN git clone https://github.com/ClemensElflein/open_mower_ros /opt/open_mower_ros
+RUN git clone https://github.com/brupje/open_mower_ros.git /opt/open_mower_ros
 ADD openmower_entrypoint.sh  /openmower_entrypoint.sh
 ADD brupjeversie.txt /brupjeversie.txt
 ADD assets/mosquitto.conf /etc/mosquitto/mosquitto.conf
