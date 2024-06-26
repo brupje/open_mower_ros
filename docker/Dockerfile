@@ -1,5 +1,5 @@
 # Get a base image
-FROM docker.io/ros:noetic-ros-base-focal AS base
+FROM docker.io/ros:noetic-ros-base-focal as base
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install required packages
@@ -13,25 +13,18 @@ RUN apt-get update && apt-get install --yes \
     rm -rf /var/lib/apt/lists/*
 
 # Install our configs
-RUN git clone https://github.com/brupje/open_mower_ros.git /opt/open_mower_ros
-ADD openmower_entrypoint.sh  /openmower_entrypoint.sh
-ADD brupjeversie.txt /brupjeversie.txt
-ADD assets/mosquitto.conf /etc/mosquitto/mosquitto.conf
-ADD assets/nginx.conf /etc/nginx/conf.d/default.conf
-#COPY --link ./docker/assets/mosquitto.conf /etc/mosquitto/mosquitto.conf
-#COPY --link ./docker/assets/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --link ./docker/assets/mosquitto.conf /etc/mosquitto/mosquitto.conf
+COPY --link ./docker/assets/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Update rosdep
 RUN rosdep update --rosdistro $ROS_DISTRO
 
 # First stage: Pull the git and all submodules, other stages depend on it
-
+FROM base as fetch
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-#COPY --link ../ /opt/open_mower_ros
-#COPY .git /opt/open_mower_ros/.git
-#COPY ../.gitmodules /opt/open_mower_ros/.gitmodules
+COPY --link ./ /opt/open_mower_ros
 
 WORKDIR /opt/open_mower_ros
 
@@ -40,13 +33,12 @@ RUN git submodule update --init --recursive
 
 # Get slic3r_coverage_planner and build that. We will pull the finished install folder from this.
 # This stage should cache most of the time, that's why it's not derived from the fetch stage, but copies stuff instead.
-FROM base AS slic3r
+FROM base as slic3r
 
-
-COPY --from=base /opt/open_mower_ros/src/lib/slic3r_coverage_planner /opt/slic3r_coverage_planner_workspace/src
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Fetch the slic3r planner from the repo (this will cache if unchanged)
+COPY --link --from=fetch /opt/open_mower_ros/src/lib/slic3r_coverage_planner /opt/slic3r_coverage_planner_workspace/src
 
 WORKDIR /opt/slic3r_coverage_planner_workspace
 RUN rosdep install --from-paths src --ignore-src --simulate | \
@@ -61,7 +53,7 @@ RUN bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && source /opt/slic3r_covera
 # If the package list is the same as last time, the apt install step is cached as well which saves a lot of time.
 # Since the list gets sorted, it will be the same each time and the cache will know that by file checksum in the COPY command.
 # We can't use this stage as base for the next, because this stage is run every time and would therefore invalidate the cache of the next stage.
-FROM base AS dependencies
+FROM fetch as dependencies
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -74,9 +66,8 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 
-
 # We can't derive this from "dependencies" because "dependencies" will be rebuilt every time, but apt install should only be done if needed
-FROM base AS assemble
+FROM base as assemble
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -90,7 +81,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # This will already have the submodules initialized, no need to clone again
-COPY --link --from=base /opt/open_mower_ros /opt/open_mower_ros
+COPY --link --from=fetch /opt/open_mower_ros /opt/open_mower_ros
 
 #delete prebuilt libs (so that they won't shadow the preinstalled ones)
 RUN rm -rf /opt/open_mower_ros/src/lib/slic3r_coverage_planner /apt-install_list
@@ -101,7 +92,7 @@ RUN bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && cd /opt/open_mower_ros/sr
 
 RUN echo "export OM_SOFTWARE_VERSION=$(git describe --tags || git describe --always || echo "v0.0.0")" > version_info.env
 
-ADD openmower_entrypoint.sh /openmower_entrypoint.sh
+COPY ./docker/openmower_entrypoint.sh /openmower_entrypoint.sh
 RUN chmod +x /openmower_entrypoint.sh
 
 ENTRYPOINT ["/openmower_entrypoint.sh"]
