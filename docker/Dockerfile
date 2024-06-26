@@ -40,7 +40,7 @@ RUN git submodule update --init --recursive
 
 # Get slic3r_coverage_planner and build that. We will pull the finished install folder from this.
 # This stage should cache most of the time, that's why it's not derived from the fetch stage, but copies stuff instead.
-FROM base as slic3r
+FROM base AS slic3r
 
 
 COPY --from=base /opt/open_mower_ros/src/lib/slic3r_coverage_planner /opt/slic3r_coverage_planner_workspace/src
@@ -76,7 +76,7 @@ RUN apt-get update && \
 
 
 # We can't derive this from "dependencies" because "dependencies" will be rebuilt every time, but apt install should only be done if needed
-FROM base as assemble
+FROM base AS assemble
 
 ENV DEBIAN_FRONTEND=noninteractive
 
