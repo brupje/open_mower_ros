@@ -27,6 +27,9 @@ By default, OpenMower is supposed to run on an ARM-based Raspberry boards: https
 #### Fetch Dependencies
 Before building, you need to fetch this project's dependencies. The best way to do this is by using rosdep:
 
+
+git submodule update --init --recursive --remote
+
 ```bash
 sudo apt install python3-rosdep
 sudo rosdep init
