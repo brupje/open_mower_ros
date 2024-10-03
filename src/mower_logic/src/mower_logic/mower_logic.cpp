@@ -469,7 +469,15 @@ void checkSafety(const ros::TimerEvent &timer_event) {
       // set this if we don't even have an orientation
       high_level_status.gps_quality_percent = -1;
     }
-    ROS_WARN_STREAM_THROTTLE(1, "Low quality GPS");
+
+
+    ROS_WARN_STREAM_THROTTLE(1, "Low quality GPS: orientationvalid="
+      + std::to_string(last_pose.orientation_valid? "Yes" :"No"  ) 
+      + "Last postion accuracy: " +  std::to_string(last_pose.position_accuracy)
+      + "Max postion accuracy: " +  std::to_string(last_config.max_position_accuracy)
+      + "last_pose.flags: " +  std::to_string((last_pose.flags & xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE ? "Yes" :"No")
+    
+    );
   }
 
   bool gpsTimeout = ros::Time::now() - last_good_gps > ros::Duration(last_config.gps_timeout);
