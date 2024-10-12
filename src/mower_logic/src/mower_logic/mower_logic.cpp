@@ -473,9 +473,9 @@ void checkSafety(const ros::TimerEvent &timer_event) {
 
     ROS_WARN_STREAM_THROTTLE(1, std::string("Low quality GPS: orientationvalid=")
       + (last_pose.orientation_valid? "Yes" :"No"  ) 
-      + "\nLast postion accuracy: " +  std::to_string(last_pose.position_accuracy)
-      + "\nMax postion accuracy: " +  std::to_string(last_config.max_position_accuracy)
-      + "\nlast_pose.flags: " +  ((last_pose.flags & xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE) ? "Yes" :"No")
+      + "Last postion accuracy: " +  std::to_string(last_pose.position_accuracy)
+      + "Max postion accuracy: " +  std::to_string(last_config.max_position_accuracy)
+      + "last_pose.flags: " +  ((last_pose.flags & xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE )? "Yes" :"No")
     
     );
   }
