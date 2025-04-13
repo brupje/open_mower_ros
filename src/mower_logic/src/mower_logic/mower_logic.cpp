@@ -480,7 +480,8 @@ void checkSafety(const ros::TimerEvent &timer_event) {
       + (last_pose.orientation_valid? "Yes" :"No"  ) 
       + "Last postion accuracy: " +  std::to_string(last_pose.position_accuracy)
       + "Max postion accuracy: " +  std::to_string(last_config.max_position_accuracy)
-      + "last_pose.flags: " +  ((last_pose.flags & xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE )? "Yes" :"No")
+      + "last_pose.flags: " +  std::to_string(last_pose.flags )
+      + "perc abs pose: " +  ((last_pose.flags & xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE )? "Yes" :"No")
     
     );
   }

@@ -3,6 +3,7 @@ build/
 devel/
 .catkin_workspace
 src/CMakeLists.txt
+src/lib
 
 .idea/
 
@@ -59,3 +60,6 @@ CATKIN_IGNORE
 
 cmake-build-debug/
 .vscode
+src/lib/ntrip_client
+src/lib/xbot_driver_gps
+src/lib/xbot_positioning
