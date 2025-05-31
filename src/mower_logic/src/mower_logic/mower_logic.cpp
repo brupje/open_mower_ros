@@ -46,6 +46,7 @@
 #include "mower_msgs/HighLevelStatus.h"
 #include "mower_msgs/MowerControlSrv.h"
 #include "mower_msgs/StartInAreaSrv.h"
+#include "mower_msgs/StartInAreaSrv.h"
 #include "mower_msgs/Status.h"
 #include "nav_msgs/Odometry.h"
 #include "nav_msgs/Path.h"
@@ -721,6 +722,7 @@ int main(int argc, char **argv) {
   ros::Subscriber action = n->subscribe("xbot/action", 0, actionReceived, ros::TransportHints().tcpNoDelay(true));
 
   ros::ServiceServer high_level_control_srv = n->advertiseService("mower_service/high_level_control", highLevelCommand);
+  ros::ServiceServer start_in_area_srv = n->advertiseService("mower_service/start_in_area", startInAreaCommand);
 
   ros::AsyncSpinner asyncSpinner(1);
   asyncSpinner.start();
