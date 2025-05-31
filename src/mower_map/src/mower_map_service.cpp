@@ -24,6 +24,7 @@
 // Rosbag for reading/writing the map to a file
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
+#include <exception>
 
 // Include Messages
 #include "geometry_msgs/Point32.h"
@@ -82,12 +83,19 @@ grid_map::GridMap map;
  */
 void fromMessage(geometry_msgs::Polygon &poly, grid_map::Polygon &out) {
   out.removeVertices();
+
+  if (poly.points.empty()) {
+    ROS_ERROR_STREAM("Error loading Polygon, length is 0");
+    throw std::exception();
+  }
+
   for (auto &point : poly.points) {
     grid_map::Position pos;
     pos.x() = point.x;
     pos.y() = point.y;
     out.addVertex(pos);
   }
+
 }
 
 /**
@@ -484,7 +492,15 @@ bool addMowingArea(mower_map::AddMowingAreaSrvRequest &req, mower_map::AddMowing
   }
 
   saveMapToFile();
-  buildMap();
+  try {
+    buildMap();
+  } catch (std::exception &e) {
+    ROS_ERROR_STREAM("Error building map");
+    mowing_areas.clear();
+    navigation_areas.clear();
+    has_docking_point = false;
+    return false;
+  }
   return true;
 }
 
@@ -542,7 +558,12 @@ bool appendMapFromFile(mower_map::AppendMapSrvRequest &req, mower_map::AppendMap
   readMapFromFile(req.bagfile, true);
 
   saveMapToFile();
-  buildMap();
+  try {
+    buildMap();
+  } catch (std::exception &e) {
+    ROS_ERROR_STREAM("Error building map");
+    return false;
+  }
 
   return true;
 }
@@ -611,10 +632,26 @@ int main(int argc, char **argv) {
   xbot_monitoring_map_pub = n.advertise<xbot_msgs::Map>("xbot_monitoring/map", 10, true);
 
   // Load the default map file
-  readMapFromFile("map.bag");
+  try {
+    readMapFromFile("map.bag");
+  } catch (std::exception &e) {
+    ROS_ERROR_STREAM("Error loading map");
+    mowing_areas.clear();
+    navigation_areas.clear();
+    has_docking_point = false;
+    saveMapToFile();
+  }
 
-  buildMap();
-
+  try {
+    buildMap();
+  } catch (std::exception &e) {
+    ROS_ERROR_STREAM("Error building map");
+    mowing_areas.clear();
+    navigation_areas.clear();
+    has_docking_point = false;
+    saveMapToFile();
+  }
+ 
   ros::ServiceServer add_area_srv = n.advertiseService("mower_map_service/add_mowing_area", addMowingArea);
   ros::ServiceServer get_area_srv = n.advertiseService("mower_map_service/get_mowing_area", getMowingArea);
   ros::ServiceServer delete_area_srv = n.advertiseService("mower_map_service/delete_mowing_area", deleteMowingArea);
