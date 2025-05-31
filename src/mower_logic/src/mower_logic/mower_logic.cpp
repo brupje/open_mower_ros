@@ -45,6 +45,7 @@
 #include "mower_msgs/HighLevelControlSrv.h"
 #include "mower_msgs/HighLevelStatus.h"
 #include "mower_msgs/MowerControlSrv.h"
+#include "mower_msgs/StartInAreaSrv.h"
 #include "mower_msgs/Status.h"
 #include "nav_msgs/Odometry.h"
 #include "nav_msgs/Path.h"
@@ -579,6 +580,19 @@ void checkSafety(const ros::TimerEvent &timer_event) {
 void reconfigureCB(mower_logic::MowerLogicConfig &c, uint32_t level) {
   ROS_INFO_STREAM("om_mower_logic: Setting mower_logic config");
   last_config = c;
+}
+
+bool startInAreaCommand(mower_msgs::StartInAreaSrvRequest &req, mower_msgs::StartInAreaSrvResponse &res) {
+  ROS_INFO_STREAM("Starting in area " << std::to_string(req.area) << ". Clearing path on start");
+  // set the current area
+
+  if (currentBehavior) {
+      ROS_INFO_STREAM("Current behavior exists: " << currentBehavior->state_name());
+      currentBehavior->command_start();
+  }
+
+  MowingBehavior::INSTANCE.setCurrentArea(req.area);
+  return true;
 }
 
 bool highLevelCommand(mower_msgs::HighLevelControlSrvRequest &req, mower_msgs::HighLevelControlSrvResponse &res) {
