@@ -571,10 +571,6 @@ void reconfigureCB(mower_logic::MowerLogicConfig &c, uint32_t level) {
 bool startInAreaCommand(mower_msgs::StartInAreaSrvRequest &req, mower_msgs::StartInAreaSrvResponse &res) {
   ROS_INFO_STREAM("Starting in area " << std::to_string(req.area) << ". Clearing path on start");
   // set the current area
-  auto cfg = getConfig();
-  cfg.clear_path_on_start = true;
-  setConfig(cfg);
-  // start
 
   if (currentBehavior) {
       ROS_INFO_STREAM("Current behavior exists: " << currentBehavior->state_name());
