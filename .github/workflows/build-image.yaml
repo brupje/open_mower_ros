@@ -37,6 +37,9 @@ on:
     branches:
       - 'main'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      
 # Allow stopping obsolete workflows
 concurrency:
   group: ci-buildtrain-${{ github.ref }}-1
