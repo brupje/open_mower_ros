@@ -8,6 +8,9 @@ source /opt/open_mower_ros/devel/setup.bash
 # setup om environment
 source /opt/open_mower_ros/version_info.env
 
+# expose the MOWER environment variable to the container, so that it can be used in the ROS nodes
+export MOWER="$OM_MOWER"
+
 # OSv2 debugging get controlled via env var DEBUG and has the ROSCONSOLE_CONFIG_FILE embedded
 shopt -s nocasematch
 case "${DEBUG:-0}" in
