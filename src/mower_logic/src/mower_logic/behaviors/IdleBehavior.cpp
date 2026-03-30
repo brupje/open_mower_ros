@@ -18,9 +18,9 @@
 #include <cryptopp/hex.h>
 #include <cryptopp/sha.h>
 #include <mower_logic/PowerConfig.h>
+#include <mower_map/GetMowingAreaSrv.h>
 #include <mower_msgs/Power.h>
 
-#include <mower_map/GetMowingAreaSrv.h>
 #include "PerimeterDocking.h"
 
 extern void stopMoving();
