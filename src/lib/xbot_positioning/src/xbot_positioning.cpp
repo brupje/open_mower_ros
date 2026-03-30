@@ -22,6 +22,10 @@
 #include "xbot_positioning/SetPoseSrv.h"
 #include "xbot_positioning_core.h"
 
+// YL: added in order to init yaw using dock heading
+#include "mower_map/GetDockingPointSrv.h"
+#include "xbot_msgs/RobotState.h"
+
 ros::Publisher odometry_pub;
 ros::Publisher xbot_absolute_pose_pub;
 
@@ -40,6 +44,8 @@ bool has_ticks;
 xbot_msgs::WheelTick last_ticks;
 bool has_gps;
 xbot_msgs::AbsolutePose last_gps;
+
+bool first_gps_fix = true;
 
 // True, if last_imu is valid and gyro_offset is valid
 bool has_gyro;
@@ -74,6 +80,38 @@ int gps_message_throttle = 1;
 
 ros::Time last_gps_time(0.0);
 
+// --- YL Dock-yaw init ---
+static bool have_dock_heading = false;
+static double dock_heading = 0.0;          // radians
+static bool yaw_initialized_from_dock = false;
+static bool is_charging_now = false;
+
+// Service client to retrieve the docking pose (and thus dock heading)
+ros::ServiceClient dockingPointClient;
+
+// Map GPS position_accuracy + RTK flags to a sensible EKF covariance (sigma, in meters).
+// Smaller sigma = trust GPS more.
+inline double gpsPositionSigma(const xbot_msgs::AbsolutePose &msg) {
+    const bool is_rtk     = (msg.flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK) != 0;
+    const bool is_rtk_fix = (msg.flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FIXED) != 0;
+    const bool is_rtk_flt = (msg.flags & xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FLOAT) != 0;
+
+    double acc = msg.position_accuracy;
+    if (!(acc > 0.0) || !std::isfinite(acc)) acc = 5.0;  // fallback if unknown
+
+    double scale = 10.0;  // default for poor/no-RTK fixes
+    if (is_rtk_fix)       scale = 1.0;
+    else if (is_rtk_flt)  scale = 3.0;
+    else if (is_rtk)      scale = 5.0;
+
+    double sigma = scale * acc;
+    const double MIN_SIGMA = 0.005;  // 5 mm
+    const double MAX_SIGMA = 500.0;
+    if (sigma < MIN_SIGMA) sigma = MIN_SIGMA;
+    if (sigma > MAX_SIGMA) sigma = MAX_SIGMA;
+    return sigma;
+}
+
 
 void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
     if (!has_gyro) {
@@ -104,8 +142,17 @@ void onImu(const sensor_msgs::Imu::ConstPtr &msg) {
         }
     }
 
-    core.predict(vx, msg->angular_velocity.z - gyro_offset, (msg->header.stamp - last_imu.header.stamp).toSec());
-    auto x = core.updateSpeed(vx, msg->angular_velocity.z - gyro_offset, 0.01);
+    double dt = (msg->header.stamp - last_imu.header.stamp).toSec();
+    double yaw_rate = msg->angular_velocity.z - gyro_offset;
+
+    // Suppress micro-rates that are likely IMU bias drift when the robot is stationary
+    const double deadband = 0.01;  // rad/s ~ 0.6 deg/s
+    if (std::fabs(yaw_rate) < deadband) {
+        yaw_rate = 0.0;
+    }
+
+    core.predict(vx, yaw_rate, dt);
+    auto x = core.updateSpeed(vx, yaw_rate, 0.01);
 
     odometry.header.stamp = ros::Time::now();
     odometry.header.seq++;
@@ -214,7 +261,7 @@ bool setPose(xbot_positioning::SetPoseSrvRequest &req, xbot_positioning::SetPose
     tf2::Quaternion q;
     tf2::fromMsg(req.robot_pose.orientation, q);
 
-
+    ROS_INFO_STREAM_THROTTLE(1,"setPose");
     tf2::Matrix3x3 m(q);
     double unused1, unused2, yaw;
 
@@ -225,19 +272,19 @@ bool setPose(xbot_positioning::SetPoseSrvRequest &req, xbot_positioning::SetPose
 
 void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
     if (!gps_enabled) {
-        ROS_INFO_STREAM_THROTTLE(gps_message_throttle, "dropping GPS update, since gps_enabled = false.");
+        // ROS_INFO_STREAM_THROTTLE(gps_message_throttle, "dropping GPS update, since gps_enabled = false.");
         return;
     }
     // TODO fuse with high covariance?
     if ((msg->flags & (xbot_msgs::AbsolutePose::FLAG_GPS_RTK_FIXED)) == 0) {
-        ROS_INFO_STREAM_THROTTLE(1, "Dropped GPS update, since it's not RTK Fixed");
+        // ROS_INFO_STREAM_THROTTLE(1, "Dropped GPS update, since it's not RTK Fixed");
         return;
     }
 
     if (msg->position_accuracy > max_gps_accuracy) {
-        ROS_INFO_STREAM_THROTTLE(
-            1, "Dropped GPS update, since it's not accurate enough. Accuracy was: " << msg->position_accuracy <<
-            ", limit is:" << max_gps_accuracy);
+        // ROS_INFO_STREAM_THROTTLE(
+        //    1, "Dropped GPS update, since it's not accurate enough. Accuracy was: " << msg->position_accuracy <<
+        //    ", limit is:" << max_gps_accuracy);
         return;
     }
 
@@ -259,27 +306,28 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
 
     double distance_to_last_gps = (last_gps_pos - gps_pos).length();
 
-    if (distance_to_last_gps < 5.0) {
+    // YL: on first GPS fix, bypass the outlier check entirely so we seed the EKF immediately
+    if (first_gps_fix || distance_to_last_gps < 5.0) {
         // inlier, we treat it normally
         // store the gps as last
         last_gps = *msg;
+        first_gps_fix = false;
         last_gps_time = ros::Time::now();
 
         gps_outlier_count = 0;
         valid_gps_samples++;
 
-        if (!has_gps && valid_gps_samples > 10) {
-            ROS_INFO_STREAM("GPS data now valid");
-            ROS_INFO_STREAM(
-                "First GPS data, moving kalman filter to " << msg->pose.pose.position.x << ", " << msg->pose.pose.
-                position.y);
+        double pos_sigma = gpsPositionSigma(*msg);
+
+        if (!has_gps) {
+            // YL: removed valid_gps_samples > 10 gate — seed EKF on first valid fix
             // we don't even have gps yet, set odometry to first estimate
-            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 0.001);
+            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, pos_sigma);
 
             has_gps = true;
         } else if (has_gps) {
             // gps was valid before, we apply the filter
-            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, 500.0);
+            core.updatePosition(msg->pose.pose.position.x, msg->pose.pose.position.y, pos_sigma);
             if (publish_debug) {
                 auto m = core.om2.h(core.ekf.getState());
                 geometry_msgs::Vector3 dbg;
@@ -305,6 +353,43 @@ void onPose(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
             valid_gps_samples = 0;
             gps_outlier_count = 0;
         }
+    }
+}
+
+// YL: Called when xbot_monitoring publishes the robot state.
+// When the mower is charging and we haven't yet initialized yaw from the dock,
+// retrieve the dock pose from mower_map and use its yaw to seed the EKF.
+void onRobotState(const xbot_msgs::RobotState::ConstPtr &msg) {
+    is_charging_now = msg->is_charging;
+
+    if (is_charging_now && !yaw_initialized_from_dock) {
+        mower_map::GetDockingPointSrv dockSrv;
+        if (dockingPointClient.call(dockSrv)) {
+            // Extract yaw from the docking pose quaternion
+            tf2::Quaternion q;
+            tf2::fromMsg(dockSrv.response.docking_pose.orientation, q);
+            tf2::Matrix3x3 m(q);
+            double unused1, unused2, yaw;
+            m.getRPY(unused1, unused2, yaw);
+
+            dock_heading = yaw;
+            have_dock_heading = true;
+
+            // Seed the EKF: keep current x,y, override heading with dock heading
+            auto s = core.getState();
+            core.setState(s.x(), s.y(), dock_heading, 0.0, 0.0);
+
+            yaw_initialized_from_dock = true;
+            ROS_INFO_STREAM("[xbot_positioning] Yaw initialized from dock heading: "
+                            << dock_heading << " rad (" << (dock_heading * 180.0 / M_PI) << " deg)");
+        } else {
+            ROS_WARN_STREAM("[xbot_positioning] Could not retrieve docking point to initialize yaw.");
+        }
+    }
+
+    // Allow re-initialization next time the mower docks
+    if (!is_charging_now) {
+        yaw_initialized_from_dock = false;
     }
 }
 
@@ -358,6 +443,10 @@ int main(int argc, char **argv) {
     ros::Subscriber twist_sub = paramNh.subscribe("twist_in", 10, onTwistIn);
     ros::Subscriber pose_sub = paramNh.subscribe("xb_pose_in", 10, onPose);
     ros::Subscriber wheel_tick_sub = paramNh.subscribe("wheel_ticks_in", 10, onWheelTicks);
+
+    // YL: subscribe to robot state to detect charging and initialize yaw from dock heading
+    dockingPointClient = n.serviceClient<mower_map::GetDockingPointSrv>("mower_map_service/get_docking_point");
+    ros::Subscriber robot_state_sub = n.subscribe("/xbot_monitoring/robot_state", 5, onRobotState);
 
     ros::spin();
     return 0;

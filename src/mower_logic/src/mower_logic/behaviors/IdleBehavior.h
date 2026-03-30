@@ -22,14 +22,25 @@
 #include "Behavior.h"
 #include "UndockingBehavior.h"
 #include "mower_map/GetMowingAreaSrv.h"
+#include "slic3r_coverage_planner/Path.h"
+#include "slic3r_coverage_planner/PlanPath.h"
 #include "xbot_msgs/ActionInfo.h"
 
 class IdleBehavior : public Behavior {
  private:
   bool stay_docked = false;
+  bool go_home_requested = false;
   bool manual_start_mowing = false;
   bool start_area_recorder = false;
   std::vector<xbot_msgs::ActionInfo> actions;
+
+  bool create_mowing_plan(int area_index);
+  std::vector<slic3r_coverage_planner::Path> currentMowingPaths;
+  std::string currentMowingPlanDigest;
+  int currentMowingPath;
+  int currentMowingArea;
+  int currentMowingPathIndex;
+  double currentMowingAngleIncrementSum;
 
  public:
   IdleBehavior(bool stayDocked);
