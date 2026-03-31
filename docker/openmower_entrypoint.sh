@@ -10,7 +10,6 @@ source /opt/open_mower_ros/version_info.env
 
 # expose the MOWER environment variable to the container, so that it can be used in the ROS nodes
 export MOWER="$OM_MOWER"
-export HARDWARE_PLATFORM=2
 
 # OSv2 debugging get controlled via env var DEBUG and has the ROSCONSOLE_CONFIG_FILE embedded
 shopt -s nocasematch
