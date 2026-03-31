@@ -212,7 +212,7 @@ jobs:
             type=sha
           images: ghcr.io/${{ env.REPOSITORY_LC }}
           flavor: |
-            latest=auto
+            latest=true
 
       # Legacy — all tags suffixed with -legacy, no `latest`
       - name: Docker meta (Legacy)
