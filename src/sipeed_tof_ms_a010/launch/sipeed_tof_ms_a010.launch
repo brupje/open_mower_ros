@@ -1,0 +1,25 @@
+<launch>
+    <!-- Sensor mounting position relative to base_link -->
+    <arg name="tof_x"   default="$(optenv OM_TOF_X 0.3)"/>
+    <arg name="tof_y"   default="$(optenv OM_TOF_Y 0.0)"/>
+    <arg name="tof_z"   default="$(optenv OM_TOF_Z 0.15)"/>
+    <arg name="tof_yaw" default="$(optenv OM_TOF_YAW 0.0)"/>
+
+    <!-- Sipeed A010 ToF sensor node -->
+    <node pkg="sipeed_tof_ms_a010" type="a010_publisher" name="sipeed_tof"
+          output="screen" respawn="true" respawn_delay="10">
+        <param name="device"   value="$(optenv OM_TOF_DEVICE /dev/ttyUSB0)"/>
+        <param name="frame_id" value="$(optenv OM_TOF_FRAME_ID tof_link)"/>
+    </node>
+
+    <!-- Static TF: base_link → tof_link -->
+    <node pkg="tf2_ros" type="static_transform_publisher"
+          name="tof_tf_publisher"
+          args="$(arg tof_x) $(arg tof_y) $(arg tof_z) $(arg tof_yaw) 0 0 base_link tof_link"/>
+
+    <!-- Inject PointCloud2 observation source into move_base_flex costmaps -->
+    <rosparam ns="/move_base_flex/global_costmap" command="load"
+              file="$(find sipeed_tof_ms_a010)/params/tof_costmap_params.yaml"/>
+    <rosparam ns="/move_base_flex/local_costmap" command="load"
+              file="$(find sipeed_tof_ms_a010)/params/tof_costmap_params.yaml"/>
+</launch>
