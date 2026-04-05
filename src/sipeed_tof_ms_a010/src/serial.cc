@@ -12,9 +12,10 @@
 #define MS_A010_DEFAULT_SERIAL_DEV_PATH "COMx"
 #endif
 
-Serial::Serial() : Serial(MS_A010_DEFAULT_SERIAL_DEV_PATH) {}
+Serial::Serial() : Serial(MS_A010_DEFAULT_SERIAL_DEV_PATH) {
+}
 
-Serial::Serial(const std::string &dev_path) : dev_path(dev_path) {
+Serial::Serial(const std::string& dev_path) : dev_path(dev_path) {
   if (this->dev_path.empty()) {
     std::cerr << "Error: no dev path provided" << std::endl;
     return;
@@ -26,7 +27,9 @@ Serial::Serial(const std::string &dev_path) : dev_path(dev_path) {
 }
 
 #ifndef WIN32
-Serial::~Serial() { delete (int *)this->priv; }
+Serial::~Serial() {
+  delete (int*)this->priv;
+}
 #else
 #endif
 
@@ -37,7 +40,7 @@ Serial::~Serial() { delete (int *)this->priv; }
 #include <unistd.h>     // write(), read(), close()
 static inline int serial_setup(int serial_port, unsigned int baudrate);
 
-void *Serial::configure_serial() {
+void* Serial::configure_serial() {
   int fd = -1;
 
   if ((fd = open(this->dev_path.c_str(), O_RDWR | O_NOCTTY | O_NDELAY)) < 0) {
@@ -58,15 +61,14 @@ void *Serial::configure_serial() {
 const std::vector<uint8_t> Serial::readBytes() const {
   uint8_t read_buf[16 * 1024];
   ssize_t bytes_readed = -1;
-  if ((bytes_readed = read(*(int *)this->priv, read_buf, sizeof(read_buf))) <
-      0) {
+  if ((bytes_readed = read(*(int*)this->priv, read_buf, sizeof(read_buf))) < 0) {
     bytes_readed = 0;
   }
   return std::vector<uint8_t>(read_buf, read_buf + bytes_readed);
 }
 
-void Serial::writeBytes(const std::vector<uint8_t> &vec) const {
-  write(*(int *)this->priv, vec.cbegin().base(), vec.size());
+void Serial::writeBytes(const std::vector<uint8_t>& vec) const {
+  write(*(int*)this->priv, vec.cbegin().base(), vec.size());
 }
 
 // C library headers
@@ -80,20 +82,17 @@ static inline int serial_setup(int serial_port, unsigned int baudrate) {
   struct termios tty;
   // Read in existing settings, and handle any error
   if (tcgetattr(serial_port, &tty) != 0) {
-    std::cerr << "Error" << errno << "from tcgetattr: " << strerror(errno)
-              << std::endl;
+    std::cerr << "Error" << errno << "from tcgetattr: " << strerror(errno) << std::endl;
     return -1;
   }
-  tty.c_cflag &= ~PARENB;  // Clear parity bit, disabling parity (most common)
-  tty.c_cflag &= ~CSTOPB;  // Clear stop field, only one stop bit used in
-                           // communication (most common)
-  tty.c_cflag &= ~CSIZE;   // Clear all the size bits, then use one of the
-                           // statements below
-  tty.c_cflag |= CS8;      // 8 bits per byte (most common)
-  tty.c_cflag &=
-      ~CRTSCTS;  // Disable RTS/CTS hardware flow control (most common)
-  tty.c_cflag |=
-      (CREAD | CLOCAL);  // Turn on READ & ignore ctrl lines (CLOCAL = 1)
+  tty.c_cflag &= ~PARENB;           // Clear parity bit, disabling parity (most common)
+  tty.c_cflag &= ~CSTOPB;           // Clear stop field, only one stop bit used in
+                                    // communication (most common)
+  tty.c_cflag &= ~CSIZE;            // Clear all the size bits, then use one of the
+                                    // statements below
+  tty.c_cflag |= CS8;               // 8 bits per byte (most common)
+  tty.c_cflag &= ~CRTSCTS;          // Disable RTS/CTS hardware flow control (most common)
+  tty.c_cflag |= (CREAD | CLOCAL);  // Turn on READ & ignore ctrl lines (CLOCAL = 1)
 
   tty.c_lflag &= ~ICANON;
   tty.c_lflag &= ~ECHO;    // Disable echo
@@ -102,13 +101,12 @@ static inline int serial_setup(int serial_port, unsigned int baudrate) {
   tty.c_lflag &= ~ISIG;    // Disable interpretation of INTR, QUIT and SUSP
 
   tty.c_iflag &= ~(IXON | IXOFF | IXANY);  // Turn off s/w flow ctrl
-  tty.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR |
-                   ICRNL);  // Disable any special handling of received bytes
+  tty.c_iflag &=
+      ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);  // Disable any special handling of received bytes
 
   tty.c_oflag &= ~OPOST;  // Prevent special interpretation of output bytes
                           // (e.g. newline chars)
-  tty.c_oflag &=
-      ~ONLCR;  // Prevent conversion of newline to carriage return/line feed
+  tty.c_oflag &= ~ONLCR;  // Prevent conversion of newline to carriage return/line feed
 
   tty.c_cc[VMIN] = 0;
   tty.c_cc[VTIME] = 10;  // Wait for up to 1s (10 deciseconds), returning as
@@ -117,8 +115,7 @@ static inline int serial_setup(int serial_port, unsigned int baudrate) {
   cfsetspeed(&tty, baudrate);
   // Save tty settings, also checking for error
   if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
-    std::cerr << "Error" << errno << "from tcsetattr: " << strerror(errno)
-              << std::endl;
+    std::cerr << "Error" << errno << "from tcsetattr: " << strerror(errno) << std::endl;
     return -1;
   }
   return 0;
@@ -139,9 +136,7 @@ static int test() {
     std::cin >> curr_key;
     std::cout << "[handler] curr_key: " << curr_key << std::endl;
     switch (curr_key) {
-      case 'a':
-        ser << "AT\r";
-        break;
+      case 'a': ser << "AT\r"; break;
       case 's':
         ser << "AT+DISP=3\r";
         cap = true;
@@ -154,9 +149,7 @@ static int test() {
         }
         cap = false;
         break;
-      case 'c':
-        ser << "AT+COEFF?\r";
-        break;
+      case 'c': ser << "AT+COEFF?\r"; break;
       case 'w':
         std::cout << std::string(vec.begin(), vec.end()) << std::endl;
         std::vector<uint8_t>().swap(vec);

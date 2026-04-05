@@ -7,7 +7,7 @@
 #include "frame_struct.h"
 #include "serial.hh"
 
-extern frame_t *handle_process(std::string s);
+extern frame_t* handle_process(std::string s);
 
 using namespace std;
 static int test() {
@@ -29,7 +29,7 @@ static int test() {
   }
   ser >> s;
   // cout << s << endl;
-  cJSON *cparms = cJSON_ParseWithLength((const char *)s.c_str(), s.length());
+  cJSON* cparms = cJSON_ParseWithLength((const char*)s.c_str(), s.length());
   uint32_t tmp;
   tmp = cJSON_GetObjectItem(cparms, "fx")->valueint;
   cout << "fx: " << (tmp >> 18) << "." << (tmp & 0x3ffff) << endl;
@@ -53,12 +53,11 @@ static int test() {
     return -1;
   }
   for (ser >> s; !s.empty(); ser >> s) {
-    frame_t *f = handle_process(s);
+    frame_t* f = handle_process(s);
     if (!f) continue;
 
     cout << f << " ";
-    cv::Mat src(f->frame_head.resolution_rows, f->frame_head.resolution_cols,
-                CV_8UC1, f->payload);
+    cv::Mat src(f->frame_head.resolution_rows, f->frame_head.resolution_cols, CV_8UC1, f->payload);
 
     stringstream fmt;
     fmt << "./" << times << ".jpg";
@@ -77,7 +76,7 @@ static int test() {
   return 0;
 }
 
-int main(int argc, char const *argv[]) {
+int main(int argc, char const* argv[]) {
   test();
   return 0;
 }
