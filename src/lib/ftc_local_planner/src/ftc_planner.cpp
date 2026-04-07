@@ -74,6 +74,13 @@ namespace ftc_local_planner
         }
         config = c;
 
+        ROS_INFO_STREAM("FTCPlanner config: shock=" << (c.shock_detection_enabled ? "ENABLED" : "disabled")
+            << " frontal_base=" << c.shock_frontal_base << " lateral_base=" << c.shock_lateral_base
+            << " speed_factor=" << c.shock_speed_factor << " min_speed=" << c.shock_min_speed << "m/s"
+            << " | slip=" << (c.slip_detection_enabled ? "ENABLED" : "disabled")
+            << " wheel_min=" << c.slip_min_wheel_distance << "m ratio_thr=" << c.slip_ratio_threshold
+            << " window=" << c.slip_detection_window << "s");
+
         // just to be sure
         current_movement_speed = config.speed_slow;
 
@@ -148,6 +155,9 @@ namespace ftc_local_planner
 
         const double ax = msg->linear_acceleration.x;
         const double ay = msg->linear_acceleration.y;
+        ROS_INFO_STREAM_THROTTLE(10.0, "FTCPlanner IMU: ax=" << ax << " ay=" << ay
+            << " | thr_frontal\u00b1" << eff_frontal << " thr_lateral\u00b1" << eff_lateral
+            << " speed=" << current_movement_speed << "m/s");
         if (std::abs(ax) > eff_frontal || std::abs(ay) > eff_lateral)
         {
             if (!shock_flag_.load())
@@ -204,6 +214,12 @@ namespace ftc_local_planner
         const double dy = pos.y - slip_last_position_.y;
         slip_gps_distance_acc_ += std::sqrt(dx * dx + dy * dy);
         slip_last_position_ = pos;
+        ROS_INFO_STREAM_THROTTLE(5.0, "FTCPlanner slip window: elapsed="
+            << (ros::Time::now() - slip_window_start_).toSec() << "s"
+            << " wheel=" << slip_wheel_distance_acc_ << "m"
+            << " gps=" << slip_gps_distance_acc_ << "m"
+            << " ratio=" << (slip_wheel_distance_acc_ > 0.0 ? slip_gps_distance_acc_ / slip_wheel_distance_acc_ : -1.0)
+            << " gps_acc=" << msg->position_accuracy << "m");
     }
 
     // -----------------------------------------------------------------------
@@ -294,6 +310,8 @@ namespace ftc_local_planner
 
         if (checkCollision(config.obstacle_lookahead))
         {
+            ROS_WARN_STREAM("FTCPlanner: Costmap collision detected (lookahead=" << config.obstacle_lookahead
+                << " segments) — triggering recovery");
             cmd_vel.twist.linear.x = 0;
             cmd_vel.twist.angular.z = 0;
             is_crashed = true;
@@ -337,7 +355,12 @@ namespace ftc_local_planner
                         return RET_BLOCKED;
                     }
                 }
-                // Reset window for next evaluation
+                // Log window result and reset for next evaluation
+                ROS_INFO_STREAM_THROTTLE(10.0, "FTCPlanner slip window closed OK: wheel=" << slip_wheel_distance_acc_
+                    << "m gps=" << slip_gps_distance_acc_ << "m"
+                    << " ratio=" << (slip_wheel_distance_acc_ > 0.0
+                        ? slip_gps_distance_acc_ / slip_wheel_distance_acc_ : -1.0)
+                    << " (thr=" << config.slip_ratio_threshold << ")");
                 slip_window_start_ = ros::Time::now();
                 slip_wheel_distance_acc_ = 0.0;
                 slip_gps_distance_acc_ = 0.0;
