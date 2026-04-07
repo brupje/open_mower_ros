@@ -1,5 +1,9 @@
 <launch>
     <node pkg="slic3r_coverage_planner" type="slic3r_coverage_planner" name="slic3r_coverage_planner" output="screen">
         <param name="visualize_plan" value="true"/>
+        <param name="omega_detection_enabled"  value="$(optenv OM_OMEGA_DETECTION_ENABLED True)"/>
+        <param name="omega_max_pair_distance"  value="$(optenv OM_OMEGA_MAX_PAIR_DISTANCE 0.55)"/>
+        <param name="omega_cusp_angle_deg"     value="$(optenv OM_OMEGA_CUSP_ANGLE 130.0)"/>
+        <param name="omega_approach_angle_deg" value="$(optenv OM_OMEGA_APPROACH_ANGLE 20.0)"/>
     </node>
 </launch>

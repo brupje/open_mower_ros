@@ -199,6 +199,26 @@ export OM_MOWING_ANGLE_OFFSET_IS_ABSOLUTE=False
 # The increment value will automatically add specified number of degrees to the mowing angle everytime the whole map is finished
 export OM_MOWING_ANGLE_INCREMENT=0
 
+# Omega-shape detection
+# The coverage planner detects pairs of sharp opposing cusps ("omega shapes") in the generated paths
+# and rewires them into a loop to avoid very steep U-turns.
+#
+# Enable or disable the feature entirely (True/False).
+# export OM_OMEGA_DETECTION_ENABLED=True
+#
+# Maximum distance (meters) between two cusp points to be considered a pair.
+# Increase to catch pairs farther apart; decrease to be more conservative.
+# export OM_OMEGA_MAX_PAIR_DISTANCE=0.55
+#
+# Minimum angle (degrees) at a point for it to be classified as a cusp candidate.
+# A value of 130 means the path must bend by at least 130° (i.e. nearly reverse direction).
+# Increase toward 180 to catch only the sharpest turns; decrease to catch gentler ones.
+# export OM_OMEGA_CUSP_ANGLE=130.0
+#
+# Approach alignment angle (degrees): the incoming direction at cusp i must point toward
+# cusp j within this angular tolerance.  Smaller values = stricter directional alignment required.
+# export OM_OMEGA_APPROACH_ANGLE=20.0
+
 # The width of mowing paths.
 # Choose it smaller than your actual mowing tool in order to have some overlap.
 # 0.13 works well for the Classic 500.

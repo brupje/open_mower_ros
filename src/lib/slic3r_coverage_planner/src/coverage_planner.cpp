@@ -26,6 +26,10 @@
 
 
 bool visualize_plan;
+bool omega_detection_enabled;
+double omega_max_pair_distance;
+double omega_cusp_angle_deg;
+double omega_approach_angle_deg;
 ros::Publisher marker_array_publisher;
 
 
@@ -196,11 +200,13 @@ void fixOmegaShapes(std::vector<slic3r_coverage_planner::Path> &paths,
                     double max_pair_distance,
                     double min_loop_radius,
                     int loop_points,
+                    double cusp_angle_deg,
+                    double approach_angle_deg,
                     std::vector<geometry_msgs::Point> &omega_points,
                     std::vector<geometry_msgs::Point> &candidate_points,
                     std::vector<geometry_msgs::Point> &cone_lines) {
-    const double COS_ANGLE_THRESHOLD = std::cos(130.0 * M_PI / 180.0); // cos(140deg)
-    const double APPROACH_COS_THRESHOLD = std::cos(20.0 * M_PI / 180.0); // require ~30deg alignment toward the other cusp
+    const double COS_ANGLE_THRESHOLD = std::cos(cusp_angle_deg * M_PI / 180.0);
+    const double APPROACH_COS_THRESHOLD = std::cos(approach_angle_deg * M_PI / 180.0);
 
     for (auto &path: paths) {
         auto &poses = path.path.poses;
@@ -842,13 +848,14 @@ bool planPath(slic3r_coverage_planner::PlanPathRequest &req, slic3r_coverage_pla
     }
 
     // Post-process generated paths to remove omega-shaped opposing cusps by inserting loops
-    // Use the exact max pair detection distance (half of requested spacing)
-    //double max_pair = req.distance * 0.5;
-    double max_pair = 0.55;
     std::vector<geometry_msgs::Point> omega_points;
     std::vector<geometry_msgs::Point> candidate_points;
     std::vector<geometry_msgs::Point> cone_lines;
-    fixOmegaShapes(res.paths, max_pair, 0.05, 16, omega_points, candidate_points, cone_lines);
+    if (omega_detection_enabled) {
+        fixOmegaShapes(res.paths, omega_max_pair_distance, 0.05, 16,
+                       omega_cusp_angle_deg, omega_approach_angle_deg,
+                       omega_points, candidate_points, cone_lines);
+    }
 
     if (visualize_plan) {
         visualization_msgs::MarkerArray arr;
@@ -928,6 +935,10 @@ int main(int argc, char **argv) {
     ros::NodeHandle paramNh("~");
 
     visualize_plan = paramNh.param("visualize_plan", true);
+    omega_detection_enabled = paramNh.param("omega_detection_enabled", true);
+    omega_max_pair_distance = paramNh.param("omega_max_pair_distance", 0.55);
+    omega_cusp_angle_deg = paramNh.param("omega_cusp_angle_deg", 130.0);
+    omega_approach_angle_deg = paramNh.param("omega_approach_angle_deg", 20.0);
 
     if (visualize_plan) {
         marker_array_publisher = n.advertise<visualization_msgs::MarkerArray>(
