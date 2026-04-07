@@ -536,17 +536,22 @@ bool MowingBehavior::execute_mowing_plan() {
           currentMowingPathIndex = 0;
           // continue with next segment
         } else {
-          // we didnt drive all points in the mow path, so we go into pause mode
-          // TODO: we should figure out the likely reason for our failure to complete the path
-          // if GPS -> PAUSE
-          // if something else -> Recovery Behaviour ?
+          // we didnt drive all points in the mow path, so we trim the path and continue
+          // Skip forward by obstacle_skip_count poses so the robot doesn't repeatedly attempt the same blocked segment
 
           // currentMowingPathIndex might be 0 if we never consumed one of the points, we advance at least 1 point
           if (currentMowingPathIndex == 0) currentMowingPathIndex++;
           if (!requested_pause_flag) {
-            ROS_INFO_STREAM("MowingBehavior: (MOW) PAUSED due to MBF Error at " << currentMowingPathIndex);
-            paused = true;
-            update_actions();
+            const int skip = std::max(1, (int)getConfig().obstacle_skip_count);
+            currentMowingPathIndex = std::min((int)path.path.poses.size(), currentMowingPathIndex + skip);
+            ROS_INFO_STREAM("MowingBehavior: (MOW) Obstacle skip: advancing path index to "
+                            << currentMowingPathIndex << " (+" << skip << ") of " << path.path.poses.size());
+            // If skipping consumed the rest of the path, advance to next segment
+            if (currentMowingPathIndex >= (int)path.path.poses.size()) {
+              ROS_INFO_STREAM("MowingBehavior: (MOW) Skip exhausted path segment, moving to next.");
+              currentMowingPath++;
+              currentMowingPathIndex = 0;
+            }
           }
         }
       }

@@ -30,6 +30,7 @@ class MowingBehavior : public Behavior {
   bool skip_path;
   bool create_mowing_plan(int area_index);
 
+ public:
   bool execute_mowing_plan();
 
   // Progress

@@ -17,12 +17,10 @@
 
 #include <actionlib/client/simple_action_client.h>
 #include <dynamic_reconfigure/server.h>
-#include <geometry_msgs/TwistStamped.h>
 #include <mower_logic/PowerConfig.h>
 #include <mower_msgs/ESCStatus.h>
 #include <mower_msgs/Emergency.h>
 #include <mower_msgs/Power.h>
-#include <sensor_msgs/Imu.h>
 #include <tf2/LinearMath/Transform.h>
 
 #include <atomic>
@@ -76,16 +74,7 @@ StateSubscriber<mower_msgs::Power> power_state_subscriber{"/ll/power"};
 StateSubscriber<mower_msgs::ESCStatus> left_esc_status_state_subscriber{"/ll/diff_drive/left_esc_status"};
 StateSubscriber<mower_msgs::ESCStatus> right_esc_status_state_subscriber{"/ll/diff_drive/right_esc_status"};
 StateSubscriber<xbot_msgs::AbsolutePose> pose_state_subscriber{"/xbot_positioning/xb_pose"};
-StateSubscriber<geometry_msgs::TwistStamped> measured_twist_state_subscriber{"/ll/diff_drive/measured_twist"};
-StateSubscriber<geometry_msgs::Twist> cmd_vel_state_subscriber{"/ll/cmd_vel"};
 ros::Time joy_vel_time(0.0);
-
-// Stuck detection: timestamp when continuous commanded-but-not-moving condition started (zero = not accumulating)
-ros::Time stuck_since(0.0);
-
-// Shock detection: set by IMU callback on lateral acceleration spike, cleared in checkSafety()
-std::atomic<bool> shock_detected{false};
-ros::Time shock_time(0.0);
 
 ros::Time last_good_gps(0.0);
 
@@ -454,43 +443,6 @@ void checkSafety(const ros::TimerEvent& timer_event) {
     return;
   }
 
-  // Stuck detection: compare commanded vs measured forward velocity
-  if (last_config.stuck_detection_enabled && currentBehavior != nullptr && currentBehavior->needs_gps()) {
-    const double cmd_vx = std::abs(cmd_vel_state_subscriber.getMessage().linear.x);
-    const double meas_vx = std::abs(measured_twist_state_subscriber.getMessage().twist.linear.x);
-    if (cmd_vx > last_config.stuck_cmd_vel_threshold && meas_vx < last_config.stuck_measured_threshold) {
-      if (stuck_since.isZero()) {
-        stuck_since = ros::Time::now();
-      } else if ((ros::Time::now() - stuck_since).toSec() > last_config.stuck_detection_duration) {
-        ROS_WARN_STREAM("om_mower_logic: Stuck detected! cmd_vx=" << cmd_vx << " meas_vx=" << meas_vx << " for "
-                                                                  << (ros::Time::now() - stuck_since).toSec()
-                                                                  << "s — stopping");
-        stuck_since = ros::Time(0.0);
-        stopMoving();
-        if (currentBehavior != nullptr) {
-          currentBehavior->requestPause(pauseType::PAUSE_EMERGENCY);
-        }
-        return;
-      }
-    } else {
-      stuck_since = ros::Time(0.0);
-    }
-  } else {
-    stuck_since = ros::Time(0.0);
-  }
-
-  // Shock/collision detection: check IMU lateral acceleration spike flagged by onImu()
-  if (last_config.shock_detection_enabled && shock_detected.load()) {
-    if ((ros::Time::now() - shock_time).toSec() < 1.0) {
-      ROS_WARN_STREAM("om_mower_logic: Shock/collision detected via IMU — stopping");
-      stopMoving();
-      if (currentBehavior != nullptr) {
-        currentBehavior->requestPause(pauseType::PAUSE_EMERGENCY);
-      }
-    }
-    shock_detected.store(false);
-  }
-
   // We need orientation and a positional accuracy less than configured
   bool gpsGoodNow = isGpsGood();
   if (gpsGoodNow || last_config.ignore_gps_errors) {
@@ -680,25 +632,6 @@ void joyVelReceived(const geometry_msgs::Twist::ConstPtr& joy_vel) {
   }
 }
 
-void onImu(const sensor_msgs::Imu::ConstPtr& msg) {
-  const auto last_config = getConfig();
-  if (!last_config.shock_detection_enabled) {
-    return;
-  }
-  // Only flag a shock if the robot was commanded to move (avoids false positives when stationary)
-  const double cmd_vx = std::abs(cmd_vel_state_subscriber.getMessage().linear.x);
-  if (cmd_vx < last_config.stuck_cmd_vel_threshold) {
-    return;
-  }
-  // Lateral acceleration magnitude in the horizontal plane (gravity on Z is not included in lateral detection)
-  const double lateral_accel = std::sqrt(msg->linear_acceleration.x * msg->linear_acceleration.x +
-                                         msg->linear_acceleration.y * msg->linear_acceleration.y);
-  if (lateral_accel > last_config.shock_accel_threshold) {
-    shock_detected.store(true);
-    shock_time = ros::Time::now();
-  }
-}
-
 void buildRootActions() {
   xbot_msgs::ActionInfo reset_emergency_action;
   reset_emergency_action.action_id = "reset_emergency";
@@ -757,12 +690,9 @@ int main(int argc, char** argv) {
   left_esc_status_state_subscriber.Start(n);
   right_esc_status_state_subscriber.Start(n);
   pose_state_subscriber.Start(n);
-  measured_twist_state_subscriber.Start(n);
-  cmd_vel_state_subscriber.Start(n);
 
   ros::Subscriber joy_cmd = n->subscribe("/joy_vel", 0, joyVelReceived, ros::TransportHints().tcpNoDelay(true));
   ros::Subscriber action = n->subscribe("xbot/action", 0, actionReceived, ros::TransportHints().tcpNoDelay(true));
-  ros::Subscriber imu_sub = n->subscribe("/ll/imu/data_raw", 10, onImu, ros::TransportHints().tcpNoDelay(true));
 
   ros::ServiceServer high_level_control_srv = n->advertiseService("mower_service/high_level_control", highLevelCommand);
 

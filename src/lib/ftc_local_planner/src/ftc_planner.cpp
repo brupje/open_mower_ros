@@ -49,6 +49,19 @@ namespace ftc_local_planner
         // Recovery behavior initialization
         failure_detector_.setBufferLength(std::round(config.oscillation_recovery_min_duration * 10));
 
+        // Shock and slip detection subscribers
+        ros::NodeHandle nh;
+        imu_sub_ = nh.subscribe("/ll/imu/data_raw", 10, &FTCPlanner::onImu, this,
+                                ros::TransportHints().tcpNoDelay(true));
+        measured_twist_sub_ = nh.subscribe("/ll/diff_drive/measured_twist", 10,
+                                           &FTCPlanner::onMeasuredTwist, this,
+                                           ros::TransportHints().tcpNoDelay(true));
+        xb_pose_sub_ = nh.subscribe("/xbot_positioning/xb_pose", 10, &FTCPlanner::onXbPose, this,
+                                    ros::TransportHints().tcpNoDelay(true));
+
+        shock_flag_.store(false);
+        slip_window_active_ = false;
+
         ROS_INFO("FTCLocalPlannerROS: Version 2 Init.");
     }
 
@@ -118,6 +131,98 @@ namespace ftc_local_planner
         {
             delete reconfig_server;
             reconfig_server = nullptr;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // IMU shock detection callback
+    // -----------------------------------------------------------------------
+    void FTCPlanner::onImu(const sensor_msgs::Imu::ConstPtr& msg)
+    {
+        if (!config.shock_detection_enabled) return;
+        if (current_state != FOLLOWING) return;
+        if (current_movement_speed < config.shock_min_speed) return;
+
+        const double eff_frontal = config.shock_frontal_base + config.shock_speed_factor * current_movement_speed;
+        const double eff_lateral = config.shock_lateral_base + config.shock_speed_factor * current_movement_speed;
+
+        const double ax = msg->linear_acceleration.x;
+        const double ay = msg->linear_acceleration.y;
+        if (std::abs(ax) > eff_frontal || std::abs(ay) > eff_lateral)
+        {
+            if (!shock_flag_.load())
+            {
+                ROS_WARN_STREAM("FTCPlanner: Shock detected! ax=" << ax << " ay=" << ay
+                    << " eff_frontal=" << eff_frontal << " eff_lateral=" << eff_lateral);
+                shock_flag_.store(true);
+                shock_flag_time_ = ros::Time::now();
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Wheel odometry accumulator for slip detection
+    // -----------------------------------------------------------------------
+    void FTCPlanner::onMeasuredTwist(const geometry_msgs::TwistStamped::ConstPtr& msg)
+    {
+        if (!config.slip_detection_enabled) return;
+        if (current_state != FOLLOWING) return;
+        if (current_movement_speed < config.shock_min_speed) return;
+
+        const double vx = msg->twist.linear.x;
+        const double dt = msg->header.stamp.isZero() ? 0.02 : 0.02; // nominal 50 Hz
+        slip_wheel_distance_acc_ += std::abs(vx) * dt;
+    }
+
+    // -----------------------------------------------------------------------
+    // GPS position accumulator for slip detection
+    // -----------------------------------------------------------------------
+    void FTCPlanner::onXbPose(const xbot_msgs::AbsolutePose::ConstPtr& msg)
+    {
+        if (!config.slip_detection_enabled) return;
+
+        const geometry_msgs::Point& pos = msg->pose.pose.position;
+        last_xb_pose_ = *msg;
+
+        if (current_state != FOLLOWING || current_movement_speed < config.shock_min_speed)
+        {
+            slip_window_active_ = false;
+            return;
+        }
+
+        if (!slip_window_active_)
+        {
+            slip_window_active_ = true;
+            slip_window_start_ = ros::Time::now();
+            slip_wheel_distance_acc_ = 0.0;
+            slip_gps_distance_acc_ = 0.0;
+            slip_last_position_ = pos;
+            return;
+        }
+
+        const double dx = pos.x - slip_last_position_.x;
+        const double dy = pos.y - slip_last_position_.y;
+        slip_gps_distance_acc_ += std::sqrt(dx * dx + dy * dy);
+        slip_last_position_ = pos;
+    }
+
+    // -----------------------------------------------------------------------
+    // Mark the current robot footprint as lethal obstacle in the costmap
+    // -----------------------------------------------------------------------
+    void FTCPlanner::markObstacleAtCurrentPose()
+    {
+        geometry_msgs::PoseStamped robot_pose;
+        if (!costmap->getRobotPose(robot_pose)) return;
+
+        double wx = robot_pose.pose.position.x;
+        double wy = robot_pose.pose.position.y;
+
+        costmap_2d::Costmap2D* cm = costmap->getCostmap();
+        unsigned int mx, my;
+        if (cm->worldToMap(wx, wy, mx, my))
+        {
+            cm->setCost(mx, my, costmap_2d::LETHAL_OBSTACLE);
+            ROS_INFO_STREAM("FTCPlanner: Marked obstacle at (" << wx << ", " << wy << ")");
         }
     }
 
@@ -192,7 +297,51 @@ namespace ftc_local_planner
             cmd_vel.twist.linear.x = 0;
             cmd_vel.twist.angular.z = 0;
             is_crashed = true;
+            markObstacleAtCurrentPose();
             return RET_BLOCKED;
+        }
+
+        // Check IMU shock flag (set asynchronously by onImu callback)
+        if (config.shock_detection_enabled && shock_flag_.load())
+        {
+            shock_flag_.store(false);
+            slip_window_active_ = false;
+            cmd_vel.twist.linear.x = 0;
+            cmd_vel.twist.angular.z = 0;
+            is_crashed = true;
+            markObstacleAtCurrentPose();
+            ROS_WARN("FTCPlanner: Shock flag triggered is_crashed — requesting recovery");
+            return RET_BLOCKED;
+        }
+
+        // Check wheel slip against GPS distance
+        if (config.slip_detection_enabled && slip_window_active_)
+        {
+            const double elapsed = (ros::Time::now() - slip_window_start_).toSec();
+            if (elapsed >= config.slip_detection_window)
+            {
+                if (slip_wheel_distance_acc_ >= config.slip_min_wheel_distance)
+                {
+                    const double ratio = (slip_wheel_distance_acc_ > 0.0)
+                        ? slip_gps_distance_acc_ / slip_wheel_distance_acc_
+                        : 1.0;
+                    if (ratio < config.slip_ratio_threshold)
+                    {
+                        ROS_WARN_STREAM("FTCPlanner: Slip detected! wheel=" << slip_wheel_distance_acc_
+                            << "m gps=" << slip_gps_distance_acc_ << "m ratio=" << ratio);
+                        slip_window_active_ = false;
+                        cmd_vel.twist.linear.x = 0;
+                        cmd_vel.twist.angular.z = 0;
+                        is_crashed = true;
+                        markObstacleAtCurrentPose();
+                        return RET_BLOCKED;
+                    }
+                }
+                // Reset window for next evaluation
+                slip_window_start_ = ros::Time::now();
+                slip_wheel_distance_acc_ = 0.0;
+                slip_gps_distance_acc_ = 0.0;
+            }
         }
 
         // Finally, we calculate the velocity commands.
