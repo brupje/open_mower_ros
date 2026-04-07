@@ -14,7 +14,9 @@ find_package(catkin REQUIRED
 		tf2_geometry_msgs
 		tf2_ros
 		geometry_msgs
+		sensor_msgs
 		std_msgs
+		xbot_msgs
 		message_generation
         )
 
@@ -76,6 +78,7 @@ add_dependencies(ftc_local_planner ftc_local_planner_generate_messages_cpp)
 
 add_library(backward_forward_recovery src/backward_forward_recovery.cpp)
 target_link_libraries(backward_forward_recovery ${catkin_LIBRARIES})
+add_dependencies(backward_forward_recovery ${catkin_EXPORTED_TARGETS})
 
 install(TARGETS ftc_local_planner backward_forward_recovery
        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
