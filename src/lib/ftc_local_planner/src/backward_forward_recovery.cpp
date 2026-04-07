@@ -68,12 +68,13 @@ void BackwardForwardRecovery::onXbPose(const xbot_msgs::AbsolutePose::ConstPtr& 
   has_xb_pose_ = true;
 }
 
-void BackwardForwardRecovery::runBehavior()
+uint32_t BackwardForwardRecovery::runBehavior(std::string& message)
 {
   if (!initialized_)
   {
     ROS_ERROR("This object must be initialized before runBehavior is called");
-    return;
+    message = "not initialized";
+    return 255;
   }
 
   ROS_WARN("BackwardForwardRecovery: Starting recovery");
@@ -107,7 +108,7 @@ void BackwardForwardRecovery::runBehavior()
   {
     ROS_WARN_STREAM("BackwardForwardRecovery: Forward path blocked within " << check_dist
                     << "m — skipping forward attempt");
-    return;
+    return 0;
   }
 
   if (attemptMove(max_distance_, true))
@@ -118,6 +119,12 @@ void BackwardForwardRecovery::runBehavior()
   {
     ROS_WARN("BackwardForwardRecovery: Forward move blocked or timed out");
   }
+  return 0;
+}
+
+bool BackwardForwardRecovery::cancel()
+{
+  return false;
 }
 
 bool BackwardForwardRecovery::isForwardPathClear(double check_distance)
@@ -200,4 +207,4 @@ bool BackwardForwardRecovery::isPositionValid(double x, double y)
 
 }  // namespace ftc_local_planner
 
-PLUGINLIB_EXPORT_CLASS(ftc_local_planner::BackwardForwardRecovery, nav_core::RecoveryBehavior)
+PLUGINLIB_EXPORT_CLASS(ftc_local_planner::BackwardForwardRecovery, mbf_costmap_core::CostmapRecovery)

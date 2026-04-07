@@ -1,7 +1,7 @@
 #ifndef BACKWARD_FORWARD_RECOVERY_H
 #define BACKWARD_FORWARD_RECOVERY_H
 
-#include <nav_core/recovery_behavior.h>
+#include <mbf_costmap_core/costmap_recovery.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <tf2_ros/buffer.h>
 #include <base_local_planner/costmap_model.h>
@@ -12,14 +12,15 @@
 namespace ftc_local_planner
 {
 
-class BackwardForwardRecovery : public nav_core::RecoveryBehavior
+class BackwardForwardRecovery : public mbf_costmap_core::CostmapRecovery
 {
 public:
   BackwardForwardRecovery();
   void initialize(std::string name, tf2_ros::Buffer* tf,
                   costmap_2d::Costmap2DROS* global_costmap,
                   costmap_2d::Costmap2DROS* local_costmap);
-  void runBehavior();
+  uint32_t runBehavior(std::string& message);
+  bool cancel();
 
 private:
   bool attemptMove(double distance, bool forward);
