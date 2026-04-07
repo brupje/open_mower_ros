@@ -51,6 +51,10 @@ std::string MowingBehavior::state_name() {
 Behavior* MowingBehavior::execute() {
   shared_state->active_semiautomatic_task = true;
 
+  ROS_INFO_STREAM("MowingBehavior: execute() - starting from area="
+                  << currentMowingArea << " path=" << currentMowingPath << " pathIndex=" << currentMowingPathIndex
+                  << " (from checkpoint if any)");
+
   while (ros::ok() && !aborted) {
     if (currentMowingPaths.empty() && !create_mowing_plan(currentMowingArea)) {
       ROS_INFO_STREAM("MowingBehavior: Could not create mowing plan, docking");
@@ -159,6 +163,22 @@ bool MowingBehavior::create_mowing_plan(int area_index) {
     ROS_INFO_STREAM("MowingBehavior: Skipping inactive mowing area");
     return true;
   }
+
+  // ---- DIAGNOSTIC: confirm what the map service returned ----
+  ROS_INFO_STREAM("MowingBehavior: create_mowing_plan area_index="
+                  << area_index << " -> got " << mapSrv.response.area.area.points.size() << " boundary points"
+                  << " and " << mapSrv.response.area.obstacles.size() << " obstacle hole(s)");
+  if (!mapSrv.response.area.area.points.empty()) {
+    const auto& fp = mapSrv.response.area.area.points[0];
+    ROS_INFO_STREAM("MowingBehavior: Area first boundary point: (" << fp.x << ", " << fp.y << ")");
+  }
+  for (size_t hi = 0; hi < mapSrv.response.area.obstacles.size(); hi++) {
+    const auto& hole = mapSrv.response.area.obstacles[hi];
+    if (!hole.points.empty())
+      ROS_INFO_STREAM("MowingBehavior: Hole[" << hi << "] first point: (" << hole.points[0].x << ", "
+                                              << hole.points[0].y << "), pts=" << hole.points.size());
+  }
+  // ---- END DIAGNOSTIC ----
 
   // Area orientation is the same as the first point
   double angle = 0;
