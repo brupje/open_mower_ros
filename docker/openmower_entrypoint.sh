@@ -7,6 +7,9 @@ source /opt/open_mower_ros/devel/setup.bash
 
 # setup om environment
 source /opt/open_mower_ros/version_info.env
+echo "========================================================"
+echo "=== OPEN_MOWER BUILD: ${OM_SOFTWARE_VERSION} ==="
+echo "========================================================"
 
 # OSv2 debugging get controlled via env var DEBUG and has the ROSCONSOLE_CONFIG_FILE embedded
 shopt -s nocasematch
