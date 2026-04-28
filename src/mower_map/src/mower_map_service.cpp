@@ -545,9 +545,6 @@ bool addMowingArea(mower_map::AddMowingAreaSrvRequest& req, mower_map::AddMowing
     buildMap();
   } catch (std::exception &e) {
     ROS_ERROR_STREAM("Error building map");
-    mowing_areas.clear();
-    navigation_areas.clear();
-    has_docking_point = false;
     return false;
   }
   return true;
@@ -757,9 +754,6 @@ int main(int argc, char** argv) {
     buildMap();
   } catch (std::exception &e) {
     ROS_ERROR_STREAM("Error building map");
-    mowing_areas.clear();
-    navigation_areas.clear();
-    has_docking_point = false;
     saveMapToFile();
   }
  
