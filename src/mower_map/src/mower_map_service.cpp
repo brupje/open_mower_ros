@@ -686,9 +686,6 @@ void convertLegacyMapToJson() {
     bag.open(LEGACY_MAP_FILE);
   } catch (rosbag::BagIOException& e) {
     ROS_ERROR_STREAM("Error opening legacy map file for conversion: " << e.what());
-    mowing_areas.clear();
-    navigation_areas.clear();
-    has_docking_point = false;
     return;
   }
 
