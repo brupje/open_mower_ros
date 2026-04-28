@@ -27,6 +27,7 @@ class MowingBehavior : public Behavior {
   std::vector<xbot_msgs::ActionInfo> actions;
 
   bool skip_area;
+  bool goto_area;
   bool skip_path;
   bool create_mowing_plan(int area_index);
 
@@ -90,6 +91,8 @@ class MowingBehavior : public Behavior {
   void checkpoint();
 
   bool restore_checkpoint();
+
+  void setCurrentArea(int newMowingArea);
 };
 
 #endif  // SRC_MOWINGBEHAVIOR_H

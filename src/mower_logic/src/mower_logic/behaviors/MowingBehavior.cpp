@@ -37,6 +37,7 @@ extern actionlib::SimpleActionClient<mbf_msgs::ExePathAction>* mbfClientExePath;
 extern mower_logic::MowerLogicConfig getConfig();
 extern void setConfig(mower_logic::MowerLogicConfig);
 
+extern void stopBlade();
 extern void registerActions(std::string prefix, const std::vector<xbot_msgs::ActionInfo>& actions);
 
 MowingBehavior MowingBehavior::INSTANCE;
