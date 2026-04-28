@@ -501,6 +501,14 @@ bool MowingBehavior::execute_mowing_plan() {
             skip_area = false;
             return true;
           }
+          if (goto_area) {
+            ROS_INFO_STREAM("MowingBehavior: Go to specific area was requested");
+            // remove all paths in current area and return true
+            mowerEnabled = false;
+            currentMowingPaths.clear();
+            goto_area = false;
+            return true;
+          }
           if (skip_path) {
             skip_path = false;
             currentMowingPath++;
@@ -751,4 +759,11 @@ bool MowingBehavior::restore_checkpoint() {
     bag.close();
   }
   return found;
+}
+
+void MowingBehavior::setCurrentArea(int newMowingArea) {
+  ROS_INFO_STREAM("Starting mowing at area " + std::to_string(newMowingArea));
+  stopBlade();
+  currentMowingArea = newMowingArea;
+  goto_area = true;
 }
