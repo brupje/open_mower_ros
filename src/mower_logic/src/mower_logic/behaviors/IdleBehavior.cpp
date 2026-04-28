@@ -14,7 +14,11 @@
 //
 #include "IdleBehavior.h"
 
+#include <cryptopp/cryptlib.h>
+#include <cryptopp/hex.h>
+#include <cryptopp/sha.h>
 #include <mower_logic/PowerConfig.h>
+#include <mower_map/GetMowingAreaSrv.h>
 #include <mower_msgs/Power.h>
 
 #include "../utils.h"
@@ -37,6 +41,7 @@ extern ll::PowerConfig getPowerConfig();
 extern dynamic_reconfigure::Server<mower_logic::MowerLogicConfig>* reconfigServer;
 
 extern ros::ServiceClient mapClient;
+extern ros::ServiceClient pathClient;
 extern ros::ServiceClient dockingPointClient;
 
 IdleBehavior IdleBehavior::INSTANCE(false);
@@ -62,7 +67,7 @@ Behavior* IdleBehavior::execute() {
     return &AreaRecordingBehavior::INSTANCE;
   }
 
-  setGPS(false);
+  // setGPS(false); // YL: keep GPS active while docked to allow dock-heading initialization in xbot_positioning
   geometry_msgs::PoseStamped docking_pose_stamped;
   docking_pose_stamped.pose = get_docking_point_srv.response.docking_pose;
   docking_pose_stamped.header.frame_id = "map";
@@ -76,6 +81,12 @@ Behavior* IdleBehavior::execute() {
     const auto last_power_config = getPowerConfig();
     const auto last_status = getStatus();
     const auto last_power = getPower();
+
+    // If a home/dock was requested externally, start docking.
+    if (go_home_requested) {
+      go_home_requested = false;
+      return &DockingBehavior::INSTANCE;
+    }
 
     const bool automatic_mode = last_config.automatic_mode == eAutoMode::AUTO;
     const bool active_semiautomatic_task =
@@ -129,6 +140,7 @@ Behavior* IdleBehavior::execute() {
 
 void IdleBehavior::enter() {
   start_area_recorder = false;
+  go_home_requested = false;
   // Reset the docking behavior, to allow docking
   DockingBehavior::INSTANCE.reset();
 
@@ -160,7 +172,12 @@ bool IdleBehavior::mower_enabled() {
 }
 
 void IdleBehavior::command_home() {
-  // IdleBehavior == docked, don't do anything.
+  // If this instance represents the docked idle behavior, ignore home command.
+  if (stay_docked) return;
+
+  // Request docking and abort the current idle loop so the state machine can transition.
+  go_home_requested = true;
+  abort();
 }
 
 void IdleBehavior::command_start() {
@@ -189,6 +206,88 @@ uint8_t IdleBehavior::get_sub_state() {
 
 uint8_t IdleBehavior::get_state() {
   return mower_msgs::HighLevelStatus::HIGH_LEVEL_STATE_IDLE;
+}
+
+bool IdleBehavior::create_mowing_plan(int area_index) {
+  ROS_INFO_STREAM("IdleBehavior: Creating mowing plan for area: " << area_index);
+  currentMowingPaths.clear();
+
+  mower_map::GetMowingAreaSrv mapSrv;
+  mapSrv.request.index = area_index;
+  if (!mapClient.call(mapSrv)) {
+    ROS_ERROR_STREAM("IdleBehavior: Error loading mowing area");
+    return false;
+  }
+
+  double angle = 0;
+  auto points = mapSrv.response.area.area.points;
+  if (points.size() >= 2) {
+    tf2::Vector3 first(points[0].x, points[0].y, 0);
+    for (auto point : points) {
+      tf2::Vector3 second(point.x, point.y, 0);
+      auto diff = second - first;
+      if (diff.length() > 2.0) {
+        angle = atan2(diff.y(), diff.x());
+        ROS_INFO_STREAM("IdleBehavior: Detected mow angle: " << angle);
+        break;
+      }
+    }
+  }
+
+  double mow_angle_offset = std::fmod(getConfig().mow_angle_offset + currentMowingAngleIncrementSum + 180, 360);
+  if (mow_angle_offset < 0) mow_angle_offset += 360;
+  mow_angle_offset -= 180;
+  ROS_INFO_STREAM("IdleBehavior: mowing angle offset (deg): " << mow_angle_offset);
+  if (config.mow_angle_offset_is_absolute) {
+    angle = mow_angle_offset * (M_PI / 180.0);
+    ROS_INFO_STREAM("IdleBehavior: Custom mowing angle: " << angle);
+  } else {
+    angle = angle + mow_angle_offset * (M_PI / 180.0);
+    ROS_INFO_STREAM("IdleBehavior: Auto-detected mowing angle + mowing angle offset: " << angle);
+  }
+
+  slic3r_coverage_planner::PlanPath pathSrv;
+  pathSrv.request.angle = angle;
+  pathSrv.request.outline_count = config.outline_count;
+  pathSrv.request.outline_overlap_count = config.outline_overlap_count;
+  pathSrv.request.outline = mapSrv.response.area.area;
+  pathSrv.request.holes = mapSrv.response.area.obstacles;
+  pathSrv.request.fill_type = slic3r_coverage_planner::PlanPathRequest::FILL_LINEAR;
+  pathSrv.request.outer_offset = config.outline_offset;
+  pathSrv.request.distance = config.tool_width;
+  if (!pathClient.call(pathSrv)) {
+    ROS_ERROR_STREAM("IdleBehavior: Error during coverage planning");
+    return false;
+  }
+
+  currentMowingPaths = pathSrv.response.paths;
+
+  CryptoPP::SHA256 hash;
+  byte digest[CryptoPP::SHA256::DIGESTSIZE];
+  for (const auto& path : currentMowingPaths) {
+    for (const auto& pose_stamped : path.path.poses) {
+      hash.Update(reinterpret_cast<const byte*>(&pose_stamped.pose), sizeof(geometry_msgs::Pose));
+    }
+  }
+  hash.Final((byte*)&digest[0]);
+  CryptoPP::HexEncoder encoder;
+  std::string mowingPlanDigest = "";
+  encoder.Attach(new CryptoPP::StringSink(mowingPlanDigest));
+  encoder.Put(digest, sizeof(digest));
+  encoder.MessageEnd();
+
+  if (mowingPlanDigest == currentMowingPlanDigest) {
+    ROS_INFO_STREAM("IdleBehavior: Advancing to checkpoint, path: " << currentMowingPath
+                                                                    << " index: " << currentMowingPathIndex);
+  } else {
+    ROS_INFO_STREAM("IdleBehavior: Ignoring checkpoint for plan ("
+                    << currentMowingPlanDigest << ") current mowing plan is (" << mowingPlanDigest << ")");
+    currentMowingPlanDigest = mowingPlanDigest;
+    currentMowingPath = 0;
+    currentMowingPathIndex = 0;
+  }
+
+  return true;
 }
 
 IdleBehavior::IdleBehavior(bool stayDocked) {

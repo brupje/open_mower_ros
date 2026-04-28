@@ -199,6 +199,26 @@ export OM_MOWING_ANGLE_OFFSET_IS_ABSOLUTE=False
 # The increment value will automatically add specified number of degrees to the mowing angle everytime the whole map is finished
 export OM_MOWING_ANGLE_INCREMENT=0
 
+# Omega-shape detection
+# The coverage planner detects pairs of sharp opposing cusps ("omega shapes") in the generated paths
+# and rewires them into a loop to avoid very steep U-turns.
+#
+# Enable or disable the feature entirely (True/False).
+# export OM_OMEGA_DETECTION_ENABLED=True
+#
+# Maximum distance (meters) between two cusp points to be considered a pair.
+# Increase to catch pairs farther apart; decrease to be more conservative.
+# export OM_OMEGA_MAX_PAIR_DISTANCE=0.55
+#
+# Minimum angle (degrees) at a point for it to be classified as a cusp candidate.
+# A value of 130 means the path must bend by at least 130° (i.e. nearly reverse direction).
+# Increase toward 180 to catch only the sharpest turns; decrease to catch gentler ones.
+# export OM_OMEGA_CUSP_ANGLE=130.0
+#
+# Approach alignment angle (degrees): the incoming direction at cusp i must point toward
+# cusp j within this angular tolerance.  Smaller values = stricter directional alignment required.
+# export OM_OMEGA_APPROACH_ANGLE=20.0
+
 # The width of mowing paths.
 # Choose it smaller than your actual mowing tool in order to have some overlap.
 # 0.13 works well for the Classic 500.
@@ -312,6 +332,45 @@ export OM_RAIN_DELAY_MINUTES=30
 # export OM_MQTT_USER=""
 # export OM_MQTT_PASSWORD=""
 # export OM_MQTT_TOPIC_PREFIX="openmower"
+
+
+################################
+##   Obstacle Recovery Settings   ##
+################################
+
+# Robot physical geometry used to build the costmap footprint polygon.
+# base_link is at the wheel axis centre.
+# FRONT: metres from wheel axis to the nose of the robot  (default 0.473 for 573mm body, axis 100mm from rear)
+# REAR:  metres from wheel axis to the rear of the robot  (default 0.100)
+# HALF_WIDTH: half the robot width in metres              (default 0.212 for 424mm wide robot)
+# export OM_ROBOT_FRONT=0.473
+# export OM_ROBOT_REAR=0.100
+# export OM_ROBOT_HALF_WIDTH=0.212
+
+# IMU-based shock/collision detection (handled by FTCPlanner; disabled by default)
+# Enable to trigger BackwardForwardRecovery on hard impacts.
+# export OM_SHOCK_DETECTION_ENABLED=False
+# Base frontal and lateral acceleration thresholds (m/s^2).
+# Effective threshold = base + shock_speed_factor * current_speed
+# export OM_SHOCK_FRONTAL_BASE=3.0
+# export OM_SHOCK_LATERAL_BASE=3.0
+# export OM_SHOCK_SPEED_FACTOR=5.0
+# Minimum commanded speed (m/s) before shock detection activates (avoids false positives when stationary)
+# export OM_SHOCK_MIN_SPEED=0.05
+
+# Wheel-slip detection: compares wheel odometry vs GPS displacement (disabled by default)
+# Enable to trigger recovery when wheels spin without actual movement.
+# export OM_SLIP_DETECTION_ENABLED=False
+# Minimum wheel-integrated distance (m) before evaluating slip in each window
+# export OM_SLIP_MIN_WHEEL_DISTANCE=0.2
+# GPS/wheel ratio below which slip is detected (0.0 = complete slip, 1.0 = no slip)
+# export OM_SLIP_RATIO_THRESHOLD=0.3
+# Time window (s) over which wheel and GPS distances are accumulated
+# export OM_SLIP_DETECTION_WINDOW=3.0
+
+# Number of mow-path poses to skip forward after an obstacle recovery (mower_logic)
+# Increase if the robot keeps hitting the same obstacle; decrease if you want tighter coverage.
+# export OM_OBSTACLE_SKIP_COUNT=10
 
 
 ################################

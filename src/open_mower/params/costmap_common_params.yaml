@@ -1,5 +1,12 @@
-#footprint: [[x0, y0], [x1, y1], ... [xn, yn]]
-robot_radius: 0.0
+# Robot footprint polygon (base_link = wheel axis centre)
+# OM_ROBOT_FRONT: distance in metres from wheel axis to front of robot  (default 0.473)
+# OM_ROBOT_REAR:  distance in metres from wheel axis to rear of robot   (default 0.100)
+# OM_ROBOT_HALF_WIDTH: half the robot width in metres                   (default 0.212)
+footprint: >
+  [[ $(optenv OM_ROBOT_FRONT 0.473),  $(optenv OM_ROBOT_HALF_WIDTH 0.212)],
+   [ $(optenv OM_ROBOT_FRONT 0.473), -$(optenv OM_ROBOT_HALF_WIDTH 0.212)],
+   [-$(optenv OM_ROBOT_REAR  0.100), -$(optenv OM_ROBOT_HALF_WIDTH 0.212)],
+   [-$(optenv OM_ROBOT_REAR  0.100),  $(optenv OM_ROBOT_HALF_WIDTH 0.212)]]
 
 global_frame: map
 robot_base_frame: base_link

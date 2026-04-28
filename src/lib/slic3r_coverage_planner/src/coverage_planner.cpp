@@ -22,9 +22,14 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 #include "ClipperUtils.hpp"
 #include "ExtrusionEntityCollection.hpp"
+#include <cmath>
 
 
 bool visualize_plan;
+bool omega_detection_enabled;
+double omega_max_pair_distance;
+double omega_cusp_angle_deg;
+double omega_approach_angle_deg;
 ros::Publisher marker_array_publisher;
 
 
@@ -189,6 +194,225 @@ createMarkers(const slic3r_coverage_planner::PlanPathRequest &planning_request,
     }
 }
 
+// Detect pairs of sharp cusps (omega shapes) in generated paths and replace
+// the small opposing-cusps region with a circular loop to avoid very steep turns.
+void fixOmegaShapes(std::vector<slic3r_coverage_planner::Path> &paths,
+                    double max_pair_distance,
+                    double min_loop_radius,
+                    int loop_points,
+                    double cusp_angle_deg,
+                    double approach_angle_deg,
+                    std::vector<geometry_msgs::Point> &omega_points,
+                    std::vector<geometry_msgs::Point> &candidate_points,
+                    std::vector<geometry_msgs::Point> &cone_lines) {
+    const double COS_ANGLE_THRESHOLD = std::cos(cusp_angle_deg * M_PI / 180.0);
+    const double APPROACH_COS_THRESHOLD = std::cos(approach_angle_deg * M_PI / 180.0);
+
+    for (auto &path: paths) {
+        auto &poses = path.path.poses;
+        if (poses.size() < 5) continue;
+
+        double dx_end = poses.back().pose.position.x - poses.front().pose.position.x;
+        double dy_end = poses.back().pose.position.y - poses.front().pose.position.y;
+        double end_dist = std::hypot(dx_end, dy_end);
+        ROS_INFO("Path size=%zu, first=(%f,%f), last=(%f,%f), end_dist=%f", poses.size(),
+             poses.front().pose.position.x, poses.front().pose.position.y,
+             poses.back().pose.position.x, poses.back().pose.position.y,
+             end_dist);
+
+        // We'll detect cusps and allow multiple replacements per path by
+        // recomputing cusp candidates after each replacement.
+        std::vector<geometry_msgs::Point> local_candidate_points;
+        std::vector<geometry_msgs::Point> local_cone_lines;
+        std::vector<geometry_msgs::Point> local_omega_points;
+
+        while (true) {
+            std::vector<int> cusp_indices;
+            size_t n = poses.size();
+            bool closed = false;
+            {
+                double dx = poses.front().pose.position.x - poses.back().pose.position.x;
+                double dy = poses.front().pose.position.y - poses.back().pose.position.y;
+                if (std::hypot(dx, dy) < 1e-6) closed = true;
+            }
+
+            // allow treating endpoints as circular neighbors if they are close (< 10cm)
+            bool end_near = end_dist < 0.1; // 10 cm
+
+            for (size_t idx = 0; idx < n; ++idx) {
+                size_t i = idx;
+                // determine previous index: allow wrapping if closed or endpoints are near
+                size_t prev;
+                if (i == 0) {
+                    if (closed || end_near) prev = n - 1;
+                    else continue; // skip first point for open paths
+                } else {
+                    prev = i - 1;
+                }
+                // determine next index similarly
+                size_t next;
+                if (i + 1 == n) {
+                    if (closed || end_near) next = 0;
+                    else continue; // skip last point for open paths
+                } else {
+                    next = i + 1;
+                }
+
+                // Vector from previous point -> current cusp candidate
+                double ax = poses[i].pose.position.x - poses[prev].pose.position.x;
+                double ay = poses[i].pose.position.y - poses[prev].pose.position.y;
+                // Vector from current cusp candidate -> next point
+                double bx = poses[next].pose.position.x - poses[i].pose.position.x;
+                double by = poses[next].pose.position.y - poses[i].pose.position.y;
+
+                // lengths of the two incident segments
+                double la = std::hypot(ax, ay);
+                double lb = std::hypot(bx, by);
+                // Dismiss degenerate segments (very small length)
+                if (la < 1e-9 || lb < 1e-9) {
+                    ROS_INFO("Dismissing very small segment=%f %f", la, lb);
+                    continue;
+                }
+
+                // Compute cosine of angle between the two incident segments.
+                // dot is close to -1 for a sharp opposite direction (omega), and +1 for straight line.
+                double dot = (ax * bx + ay * by) / (la * lb);
+
+                // Selection condition: the angle at this point must be sufficiently sharp to be a 'cusp'.
+                // We use COS_ANGLE_THRESHOLD = cos(130deg). If dot < COS_ANGLE_THRESHOLD, the angle
+                // between incoming and outgoing vectors is > 130deg and we consider this a cusp candidate.
+                if (dot < COS_ANGLE_THRESHOLD) {
+                    ROS_INFO("Candidate at =%f %f, dot=%f",
+                             poses[i].pose.position.x,
+                             poses[i].pose.position.y,
+                             dot);
+
+                    // register cusp index for later pairing
+                    cusp_indices.push_back((int)i);
+
+                    // register candidate point (for visualization) locally
+                    geometry_msgs::Point cp;
+                    cp.x = poses[i].pose.position.x;
+                    cp.y = poses[i].pose.position.y;
+                    cp.z = poses[i].pose.position.z;
+                    local_candidate_points.push_back(cp);
+
+                    // Build a visualization cone showing the approach direction. This cone uses the
+                    // approach vector (from previous point to the cusp) and an angular aperture
+                    // defined by acos(APPROACH_COS_THRESHOLD).
+                    double aix = poses[i].pose.position.x - poses[prev].pose.position.x;
+                    double aiy = poses[i].pose.position.y - poses[prev].pose.position.y;
+                    double approach_len = std::hypot(aix, aiy);
+                    if (approach_len > 1e-9) {
+                        double ux = aix / approach_len;
+                        double uy = aiy / approach_len;
+                        double ang = std::acos(APPROACH_COS_THRESHOLD); // half-aperture of approach cone
+                        double ca = std::cos(ang);
+                        double sa = std::sin(ang);
+                        // rotate (ux,uy) by +ang
+                        double rx1 = ux * ca - uy * sa;
+                        double ry1 = ux * sa + uy * ca;
+                        // rotate by -ang
+                        double rx2 = ux * ca + uy * sa;
+                        double ry2 = -ux * sa + uy * ca;
+                        double cone_len = max_pair_distance; // visualize up to pairing distance
+                        geometry_msgs::Point p1; p1.x = cp.x + rx1 * cone_len; p1.y = cp.y + ry1 * cone_len; p1.z = cp.z;
+                        geometry_msgs::Point p2; p2.x = cp.x + rx2 * cone_len; p2.y = cp.y + ry2 * cone_len; p2.z = cp.z;
+                        // add two lines: cusp->p1 and cusp->p2 (for visualization only)
+                        local_cone_lines.push_back(cp);
+                        local_cone_lines.push_back(p1);
+                        local_cone_lines.push_back(cp);
+                        local_cone_lines.push_back(p2);
+                    }
+                }
+            }
+
+            // Try to find and replace pairs until none remain for the current poses.
+            bool replaced = false;
+            for (size_t ci = 0; ci < cusp_indices.size() && !replaced; ++ci) {
+                for (size_t cj = ci + 1; cj < cusp_indices.size() && !replaced; ++cj) {
+                    int i = cusp_indices[ci];
+                    int j = cusp_indices[cj];
+
+                    double dx = poses[j].pose.position.x - poses[i].pose.position.x;
+                    double dy = poses[j].pose.position.y - poses[i].pose.position.y;
+                    double dist = std::hypot(dx, dy);
+
+                    ROS_INFO("Cusps at =%f %f %f %f, dist=%f",
+                        poses[i].pose.position.x,
+                        poses[i].pose.position.y,
+                        poses[j].pose.position.x,
+                        poses[j].pose.position.y,
+                        dist
+                    );
+
+                    if (dist > max_pair_distance) {
+                        ROS_INFO("  Too far (dist=%f <= %f)", dist, max_pair_distance);
+                        continue;
+                    }
+                    else {
+                        ROS_INFO("  Not too far (dist=%f <= %f)", dist, max_pair_distance);
+                    }
+
+                    // check that the approach to cusp i is directed toward cusp j
+                    size_t prev_i = (i == 0) ? (n - 1) : (i - 1);
+                    double aix = poses[i].pose.position.x - poses[prev_i].pose.position.x;
+                    double aiy = poses[i].pose.position.y - poses[prev_i].pose.position.y;
+                    double tijx = poses[j].pose.position.x - poses[i].pose.position.x;
+                    double tijy = poses[j].pose.position.y - poses[i].pose.position.y;
+                    double na = std::hypot(aix, aiy);
+                    double nb = std::hypot(tijx, tijy);
+                    if (na < 1e-9 || nb < 1e-9) continue;
+                    double approach_dot = (aix * tijx + aiy * tijy) / (na * nb);
+                    if (approach_dot < APPROACH_COS_THRESHOLD) continue;
+
+                    // Replace subpath between i and j (inclusive) by reordering existing points
+                    std::vector<geometry_msgs::PoseStamped> newposes;
+                    for (int k = 0; k <= i - 1; ++k) newposes.push_back(poses[k]);
+                    newposes.push_back(poses[i]);
+                    newposes.push_back(poses[j]);
+                    for (int k = (int)j - 1; k >= i + 1; --k) {
+                        newposes.push_back(poses[k]);
+                    }
+                    newposes.push_back(poses[i]);
+                    newposes.push_back(poses[j]);
+                    for (size_t k = j + 1; k < poses.size(); ++k) newposes.push_back(poses[k]);
+
+                    if (newposes.size() >= 2) {
+                        for (size_t k = 0; k + 1 < newposes.size(); ++k) {
+                            double dxn = newposes[k + 1].pose.position.x - newposes[k].pose.position.x;
+                            double dyn = newposes[k + 1].pose.position.y - newposes[k].pose.position.y;
+                            double orient = std::atan2(dyn, dxn);
+                            tf2::Quaternion q(0.0, 0.0, orient);
+                            newposes[k].pose.orientation = tf2::toMsg(q);
+                        }
+                        newposes.back().pose.orientation = newposes[newposes.size() - 2].pose.orientation;
+                    }
+
+                    // mark both cusp points for visualization (locally)
+                    geometry_msgs::Point pa; pa.x = poses[i].pose.position.x; pa.y = poses[i].pose.position.y; pa.z = poses[i].pose.position.z;
+                    geometry_msgs::Point pb; pb.x = poses[j].pose.position.x; pb.y = poses[j].pose.position.y; pb.z = poses[j].pose.position.z;
+                    local_omega_points.push_back(pa);
+                    local_omega_points.push_back(pb);
+
+                    poses.swap(newposes);
+                    replaced = true;
+                }
+            }
+
+            // If we performed a replacement, recompute cusps on the updated poses to find further pairs.
+            if (!replaced) {
+                // Move locally collected visualization points into the global accumulators
+                for (auto &p: local_candidate_points) candidate_points.push_back(p);
+                for (auto &p: local_cone_lines) cone_lines.push_back(p);
+                for (auto &p: local_omega_points) omega_points.push_back(p);
+                break;
+            }
+            // else: loop again to detect further pairs on the modified poses
+        }
+    }
+}
+
 void traverse_from_left(std::vector<PerimeterGeneratorLoop> &contours, std::vector<Polygons> &line_groups) {
     for (auto &contour: contours) {
         if (contour.children.empty()) {
@@ -319,7 +543,6 @@ slic3r_coverage_planner::Path determinePathForOutline(std_msgs::Header &header, 
 }
 
 bool planPath(slic3r_coverage_planner::PlanPathRequest &req, slic3r_coverage_planner::PlanPathResponse &res) {
-
     Slic3r::Polygon outline_poly;
     for (auto &pt: req.outline.points) {
         outline_poly.points.push_back(Point(scale_(pt.x), scale_(pt.y)));
@@ -338,6 +561,7 @@ bool planPath(slic3r_coverage_planner::PlanPathRequest &req, slic3r_coverage_pla
         hole_poly.make_clockwise();
 
         if (intersection(outline_poly, hole_poly).empty()) continue;
+
         expoly.holes.push_back(hole_poly);
     }
 
@@ -456,59 +680,54 @@ bool planPath(slic3r_coverage_planner::PlanPathRequest &req, slic3r_coverage_pla
             }
         }
 
-        if (!req.skip_area_outline) {
-            traverse_from_right(contours[0], area_outlines);
+        traverse_from_right(contours[0], area_outlines);
+        for (auto &hole: holes) {
+            traverse_from_left(hole, obstacle_outlines);
         }
 
-        if (!req.skip_obstacle_outlines) {
-            for (auto &hole: holes) {
-                traverse_from_left(hole, obstacle_outlines);
-            }
-            for (auto &obstacle_group: obstacle_outlines) {
-                for (auto &poly: obstacle_group) {
-                    std::reverse(poly.points.begin(), poly.points.end());
-                }
+        for (auto &obstacle_group: obstacle_outlines) {
+            for (auto &poly: obstacle_group) {
+                std::reverse(poly.points.begin(), poly.points.end());
             }
         }
     }
 
 
-    if (!req.skip_fill) {
-        ExPolygons expp = union_ex(inner);
+    ExPolygons expp = union_ex(inner);
 
 
-        // Go through the innermost poly and create the fill path using a Fill object
-        for (auto &poly: expp) {
-            Slic3r::Surface surface(Slic3r::SurfaceType::stBottom, poly);
+    // Go through the innermost poly and create the fill path using a Fill object
+    for (auto &poly: expp) {
+        Slic3r::Surface surface(Slic3r::SurfaceType::stBottom, poly);
 
-            Slic3r::Fill *fill;
-            if (req.fill_type == slic3r_coverage_planner::PlanPathRequest::FILL_LINEAR) {
-                fill = new Slic3r::FillRectilinear();
-            } else {
-                fill = new Slic3r::FillConcentric();
-            }
-            fill->link_max_length = scale_(1.0);
-            fill->angle = req.angle;
-            fill->z = scale_(1.0);
-            fill->endpoints_overlap = 0;
-            fill->density = 1.0;
-            fill->dont_connect = false;
-            fill->dont_adjust = true;
-            fill->min_spacing = req.distance;
-            fill->complete = false;
-            fill->link_max_length = 0;
 
-            ROS_INFO_STREAM("Starting Fill. Poly size:" << surface.expolygon.contour.points.size());
+        Slic3r::Fill *fill;
+        if (req.fill_type == slic3r_coverage_planner::PlanPathRequest::FILL_LINEAR) {
+            fill = new Slic3r::FillRectilinear();
+        } else {
+            fill = new Slic3r::FillConcentric();
+        }
+        fill->link_max_length = scale_(1.0);
+        fill->angle = req.angle;
+        fill->z = scale_(1.0);
+        fill->endpoints_overlap = 0;
+        fill->density = 1.0;
+        fill->dont_connect = false;
+        fill->dont_adjust = false;
+        fill->min_spacing = req.distance;
+        fill->complete = false;
+        fill->link_max_length = 0;
 
-            Slic3r::Polylines lines = fill->fill_surface(surface);
-            append_to(fill_lines, lines);
-            delete fill;
-            fill = nullptr;
+        ROS_INFO_STREAM("Starting Fill. Poly size:" << surface.expolygon.contour.points.size());
 
-            ROS_INFO_STREAM("Fill Complete. Polyline count: " << lines.size());
-            for (int i = 0; i < lines.size(); i++) {
-                ROS_INFO_STREAM("Polyline " << i << " has point count: " << lines[i].points.size());
-            }
+        Slic3r::Polylines lines = fill->fill_surface(surface);
+        append_to(fill_lines, lines);
+        delete fill;
+        fill = nullptr;
+
+        ROS_INFO_STREAM("Fill Complete. Polyline count: " << lines.size());
+        for (int i = 0; i < lines.size(); i++) {
+            ROS_INFO_STREAM("Polyline " << i << " has point count: " << lines[i].points.size());
         }
     }
 
@@ -579,57 +798,65 @@ bool planPath(slic3r_coverage_planner::PlanPathRequest &req, slic3r_coverage_pla
         }
     }
 
-    if (!req.skip_fill) {
-        for (int i = 0; i < fill_lines.size(); i++) {
-            auto &line = fill_lines[i];
-            slic3r_coverage_planner::Path path;
-            path.is_outline = false;
-            path.path.header = header;
+    for (int i = 0; i < fill_lines.size(); i++) {
+        auto &line = fill_lines[i];
+        slic3r_coverage_planner::Path path;
+        path.is_outline = false;
+        path.path.header = header;
 
-            line.remove_duplicate_points();
+        line.remove_duplicate_points();
 
 
-            auto equally_spaced_points = line.equally_spaced_points(scale_(0.1));
-            if (equally_spaced_points.size() < 2) {
-                ROS_INFO("Skipping single dot");
+        auto equally_spaced_points = line.equally_spaced_points(scale_(0.1));
+        if (equally_spaced_points.size() < 2) {
+            ROS_INFO("Skipping single dot");
+            continue;
+        }
+        ROS_INFO_STREAM("Got " << equally_spaced_points.size() << " points");
+
+        Point *lastPoint = nullptr;
+        for (auto &pt: equally_spaced_points) {
+            if (lastPoint == nullptr) {
+                lastPoint = &pt;
                 continue;
             }
-            ROS_INFO_STREAM("Got " << equally_spaced_points.size() << " points");
 
-            Point *lastPoint = nullptr;
-            for (auto &pt: equally_spaced_points) {
-                if (lastPoint == nullptr) {
-                    lastPoint = &pt;
-                    continue;
-                }
+            // calculate pose for "lastPoint" pointing to current point
 
-                // calculate pose for "lastPoint" pointing to current point
+            auto dir = pt - *lastPoint;
+            double orientation = atan2(dir.y, dir.x);
+            tf2::Quaternion q(0.0, 0.0, orientation);
 
-                auto dir = pt - *lastPoint;
-                double orientation = atan2(dir.y, dir.x);
-                tf2::Quaternion q(0.0, 0.0, orientation);
-
-                geometry_msgs::PoseStamped pose;
-                pose.header = header;
-                pose.pose.orientation = tf2::toMsg(q);
-                pose.pose.position.x = unscale(lastPoint->x);
-                pose.pose.position.y = unscale(lastPoint->y);
-                pose.pose.position.z = 0;
-                path.path.poses.push_back(pose);
-                lastPoint = &pt;
-            }
-
-            // finally, we add the final pose for "lastPoint" with the same orientation as the last pose
             geometry_msgs::PoseStamped pose;
             pose.header = header;
-            pose.pose.orientation = path.path.poses.back().pose.orientation;
+            pose.pose.orientation = tf2::toMsg(q);
             pose.pose.position.x = unscale(lastPoint->x);
             pose.pose.position.y = unscale(lastPoint->y);
             pose.pose.position.z = 0;
             path.path.poses.push_back(pose);
-
-            res.paths.push_back(path);
+            lastPoint = &pt;
         }
+
+        // finally, we add the final pose for "lastPoint" with the same orientation as the last pose
+        geometry_msgs::PoseStamped pose;
+        pose.header = header;
+        pose.pose.orientation = path.path.poses.back().pose.orientation;
+        pose.pose.position.x = unscale(lastPoint->x);
+        pose.pose.position.y = unscale(lastPoint->y);
+        pose.pose.position.z = 0;
+        path.path.poses.push_back(pose);
+
+        res.paths.push_back(path);
+    }
+
+    // Post-process generated paths to remove omega-shaped opposing cusps by inserting loops
+    std::vector<geometry_msgs::Point> omega_points;
+    std::vector<geometry_msgs::Point> candidate_points;
+    std::vector<geometry_msgs::Point> cone_lines;
+    if (omega_detection_enabled) {
+        fixOmegaShapes(res.paths, omega_max_pair_distance, 0.05, 16,
+                       omega_cusp_angle_deg, omega_approach_angle_deg,
+                       omega_points, candidate_points, cone_lines);
     }
 
     if (visualize_plan) {
@@ -645,6 +872,56 @@ bool planPath(slic3r_coverage_planner::PlanPathRequest &req, slic3r_coverage_pla
             arr.markers.push_back(marker);
         }
         createMarkers(req, res, arr);
+
+        /* mark candidate to omega fixing */
+        if (!candidate_points.empty()) {
+            visualization_msgs::Marker cand_marker;
+            cand_marker.header.frame_id = "map";
+            cand_marker.ns = "omega_candidates";
+            cand_marker.id = static_cast<int>(arr.markers.size());
+            cand_marker.frame_locked = true;
+            cand_marker.action = visualization_msgs::Marker::ADD;
+            cand_marker.type = visualization_msgs::Marker::SPHERE_LIST;
+            std_msgs::ColorRGBA cc; cc.r = 1.0; cc.g = 1.0; cc.b = 0.0; cc.a = 1.0;
+            cand_marker.color = cc;
+            cand_marker.pose.orientation.w = 1.0;
+            cand_marker.scale.x = cand_marker.scale.y = cand_marker.scale.z = 0.06;
+            for (auto &p: candidate_points) cand_marker.points.push_back(p);
+            arr.markers.push_back(cand_marker);
+        }
+
+        if (!cone_lines.empty()) {
+            visualization_msgs::Marker cone_marker;
+            cone_marker.header.frame_id = "map";
+            cone_marker.ns = "omega_cones";
+            cone_marker.id = static_cast<int>(arr.markers.size());
+            cone_marker.frame_locked = true;
+            cone_marker.action = visualization_msgs::Marker::ADD;
+            cone_marker.type = visualization_msgs::Marker::LINE_LIST;
+            std_msgs::ColorRGBA cc; cc.r = 1.0; cc.g = 1.0; cc.b = 1.0; cc.a = 1.0;
+            cone_marker.color = cc;
+            cone_marker.pose.orientation.w = 1.0;
+            cone_marker.scale.x = 0.02;
+            for (auto &p: cone_lines) cone_marker.points.push_back(p);
+            arr.markers.push_back(cone_marker);
+        }
+
+        if (!omega_points.empty()) {
+            visualization_msgs::Marker omega_marker;
+            omega_marker.header.frame_id = "map";
+            omega_marker.ns = "omega_points";
+            omega_marker.id = static_cast<int>(arr.markers.size());
+            omega_marker.frame_locked = true;
+            omega_marker.action = visualization_msgs::Marker::ADD;
+            omega_marker.type = visualization_msgs::Marker::SPHERE_LIST;
+            std_msgs::ColorRGBA c; c.r = 1.0; c.g = 0.0; c.b = 1.0; c.a = 1.0;
+            omega_marker.color = c;
+            omega_marker.pose.orientation.w = 1.0;
+            omega_marker.scale.x = omega_marker.scale.y = omega_marker.scale.z = 0.08;
+            for (auto &p: omega_points) omega_marker.points.push_back(p);
+            arr.markers.push_back(omega_marker);
+        }
+
         marker_array_publisher.publish(arr);
     }
 
@@ -660,6 +937,10 @@ int main(int argc, char **argv) {
     ros::NodeHandle paramNh("~");
 
     visualize_plan = paramNh.param("visualize_plan", true);
+    omega_detection_enabled = paramNh.param("omega_detection_enabled", true);
+    omega_max_pair_distance = paramNh.param("omega_max_pair_distance", 0.55);
+    omega_cusp_angle_deg = paramNh.param("omega_cusp_angle_deg", 130.0);
+    omega_approach_angle_deg = paramNh.param("omega_approach_angle_deg", 20.0);
 
     if (visualize_plan) {
         marker_array_publisher = n.advertise<visualization_msgs::MarkerArray>(

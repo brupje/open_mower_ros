@@ -357,6 +357,35 @@ void visualizeAreas() {
  * Finally, a blur is applied to the map so that it is expensive, but not completely forbidden to drive near boundaries.
  */
 void buildMap() {
+  // ---- DIAGNOSTIC: dump all areas so we can verify type assignment ----
+  {
+    int count_mow = 0, count_nav = 0, count_obstacle = 0, count_other = 0;
+    for (const auto& area : map_data.areas) {
+      if (area.type == "mow")
+        count_mow++;
+      else if (area.type == "nav")
+        count_nav++;
+      else if (area.type == "obstacle")
+        count_obstacle++;
+      else
+        count_other++;
+      // Per-area one-liner: type, active state, first point for identification
+      std::string first_pt = area.outline.empty() ? "(empty)"
+                                                  : "(" + std::to_string(area.outline[0].x) + ", " +
+                                                        std::to_string(area.outline[0].y) + ")";
+      ROS_INFO_STREAM("MapArea id=" << area.id << " type=" << area.type
+                                    << " active=" << (area.active ? "true" : "false") << " pts=" << area.outline.size()
+                                    << " first=" << first_pt);
+    }
+    ROS_INFO_STREAM("buildMap: total areas=" << map_data.areas.size() << "  mow=" << count_mow << "  nav=" << count_nav
+                                             << "  obstacle=" << count_obstacle << "  other(draft?)=" << count_other);
+    if (count_other > 0)
+      ROS_WARN_STREAM("buildMap: " << count_other
+                                   << " area(s) have an unrecognised type - they will be IGNORED by the planner. Check "
+                                      "that map.json was saved correctly.");
+  }
+  // ---- END DIAGNOSTIC ----
+
   // First, calculate the size of the map by finding the min and max values for x and y.
   float minX = FLT_MAX;
   float maxX = -FLT_MAX;
@@ -554,17 +583,33 @@ bool getMowingArea(mower_map::GetMowingAreaSrvRequest& req, mower_map::GetMowing
   ROS_INFO_STREAM("Got getMowingArea call with index: " << req.index);
 
   auto mowing_areas = map_data.getMowingAreas();
+  ROS_INFO_STREAM("getMowingArea: map has " << map_data.areas.size() << " total areas, " << mowing_areas.size()
+                                            << " are type=mow");
+
   if (req.index >= mowing_areas.size()) {
-    ROS_ERROR_STREAM("No mowing area with index: " << req.index);
+    ROS_ERROR_STREAM("getMowingArea: index " << req.index << " out of range (only " << mowing_areas.size()
+                                             << " mow areas). "
+                                             << "MowingBehavior will think mowing is done and dock.");
     return false;
   }
 
-  res.area = internalMapAreaToMower(mowing_areas[req.index]);
+  const MapArea& chosen = mowing_areas[req.index];
+  res.area = internalMapAreaToMower(chosen);
 
+  ROS_INFO_STREAM("getMowingArea: returning area id=" << chosen.id << " name='" << chosen.name << "'"
+                                                      << " pts=" << chosen.outline.size()
+                                                      << " active=" << (chosen.active ? "true" : "false"));
+  if (!chosen.outline.empty())
+    ROS_INFO_STREAM("getMowingArea: first point of returned area: (" << chosen.outline[0].x << ", "
+                                                                     << chosen.outline[0].y << ")");
+
+  int obstacle_count = 0;
   for (const auto& area : map_data.areas) {
     if (!area.active || area.type != "obstacle") continue;
     res.area.obstacles.push_back(internalPolygonToGeometry(area.outline));
+    obstacle_count++;
   }
+  ROS_INFO_STREAM("getMowingArea: attached " << obstacle_count << " obstacle hole(s) to mowing area");
 
   return true;
 }

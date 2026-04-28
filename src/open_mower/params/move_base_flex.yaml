@@ -8,8 +8,11 @@ controllers:
   - name: DockingFTCPlanner
     type: ftc_local_planner/FTCPlanner
 
+recovery_behaviors:
+  - name: BackwardForwardRecovery
+    type: ftc_local_planner/BackwardForwardRecovery
 
-controller_frequency: 1.0
+controller_frequency: 5.0
 controller_patience: 30.0
 
 planner_frequency: 1.0

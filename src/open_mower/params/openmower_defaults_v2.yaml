@@ -48,6 +48,14 @@ mower_logic:
   emergency_lift_period: -1
   emergency_tilt_period: -1
   ignore_charging_current: false
+  # Stuck detection (disabled by default — enable and tune thresholds for your robot)
+  stuck_detection_enabled: false
+  stuck_cmd_vel_threshold: 0.05
+  stuck_measured_threshold: 0.02
+  stuck_detection_duration: 2.5
+  # Shock/collision detection via IMU (disabled by default — tune threshold to your IMU noise floor)
+  shock_detection_enabled: false
+  shock_accel_threshold: 5.0
 
 xbot_monitoring:
   external_mqtt_enable: false

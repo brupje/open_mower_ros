@@ -31,11 +31,15 @@ on:
       - 'main'
       - 'releases/**'
       - 'v2'
+      - 'migrate/to-clemens-main'
     tags:
       - 'v*'
   pull_request:
     branches:
       - 'main'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # Allow stopping obsolete workflows
 concurrency:
@@ -209,7 +213,7 @@ jobs:
             type=sha
           images: ghcr.io/${{ env.REPOSITORY_LC }}
           flavor: |
-            latest=auto
+            latest=true
 
       # Legacy — all tags suffixed with -legacy, no `latest`
       - name: Docker meta (Legacy)
