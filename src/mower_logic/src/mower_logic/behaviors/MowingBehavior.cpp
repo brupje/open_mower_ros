@@ -356,6 +356,15 @@ bool MowingBehavior::execute_mowing_plan() {
             skip_area = false;
             return true;
           }
+          if (goto_area) {
+            ROS_INFO_STREAM("MowingBehavior: Go to specific area was requested");
+            // remove all paths in current area and return true
+            mowerEnabled = false;
+            mbfClientExePath->cancelAllGoals();
+            currentMowingPaths.clear();
+            goto_area = false;
+            return false;
+          }
           if (skip_path) {
             skip_path = false;
             currentMowingPath++;
@@ -590,15 +599,19 @@ bool MowingBehavior::redirect_joystick() {
 uint8_t MowingBehavior::get_sub_state() {
   return 0;
 }
+
 uint8_t MowingBehavior::get_state() {
   return mower_msgs::HighLevelStatus::HIGH_LEVEL_STATE_AUTONOMOUS;
 }
+
 int16_t MowingBehavior::get_current_area() {
   return currentMowingArea;
 }
+
 int16_t MowingBehavior::get_current_path() {
   return currentMowingPath;
 }
+
 int16_t MowingBehavior::get_current_path_index() {
   return currentMowingPathIndex;
 }
@@ -708,4 +721,10 @@ bool MowingBehavior::restore_checkpoint() {
     bag.close();
   }
   return found;
+}
+
+void MowingBehavior::setCurrentArea(int newMowingArea) {
+  ROS_INFO_STREAM("Starting mowing at area " + std::to_string(newMowingArea));
+  currentMowingArea = newMowingArea;
+  goto_area=true;
 }

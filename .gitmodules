@@ -12,8 +12,7 @@
 	branch=main
 [submodule "src/lib/ntrip_client"]
 	path = src/lib/ntrip_client
-	url = https://github.com/LORD-MicroStrain/ntrip_client.git
-	branch=ros
+	url = https://github.com/xtech/ntrip_client.git
 [submodule "src/lib/xbot_msgs"]
 	path = src/lib/xbot_msgs
 	url = https://github.com/ClemensElflein/xbot_msgs.git
@@ -33,4 +32,9 @@
 [submodule "src/lib/xbot_remote"]
 	path = src/lib/xbot_remote
 	url = https://github.com/ClemensElflein/xbot_remote
-	branch=main
+[submodule "src/lib/xbot_framework"]
+	path = src/lib/xbot_framework
+	url = https://github.com/xtech/xbot_framework.git
+[submodule "services"]
+	path = services
+	url = https://github.com/xtech/definitions-open-mower.git
