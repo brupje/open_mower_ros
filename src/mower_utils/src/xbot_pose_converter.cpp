@@ -1,7 +1,18 @@
-//
 // Created by Clemens Elflein on 22.02.22.
-// Copyright (c) 2022 Clemens Elflein. All rights reserved.
+// Copyright (c) 2022 Clemens Elflein and OpenMower contributors. All rights reserved.
 //
+// This file is part of OpenMower.
+//
+// OpenMower is free software: you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation, version 3 of the License.
+//
+// OpenMower is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+// PARTICULAR PURPOSE. See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// OpenMower. If not, see <https://www.gnu.org/licenses/>.
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include "mower_map/GetMowingAreaSrv.h"
 #include "ros/ros.h"
@@ -12,7 +23,7 @@ ros::Publisher pose_pub;
 geometry_msgs::PoseWithCovarianceStamped out;
 std::string frame;
 
-void pose_received(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
+void pose_received(const xbot_msgs::AbsolutePose::ConstPtr& msg) {
   out.header = msg->header;
   out.pose = msg->pose;
   out.pose.pose.position.z = 0;
@@ -20,7 +31,7 @@ void pose_received(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
   pose_pub.publish(out);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ros::init(argc, argv, "xbot_pose_converter");
 
   ros::NodeHandle n;

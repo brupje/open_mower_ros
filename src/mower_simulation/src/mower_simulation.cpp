@@ -1,19 +1,16 @@
 // Created by Clemens Elflein on 2/18/22, 5:37 PM.
-// Copyright (c) 2022 Clemens Elflein. All rights reserved.
+// Copyright (c) 2022 Clemens Elflein and OpenMower contributors. All rights reserved.
 //
-// This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
+// This file is part of OpenMower.
 //
-// Feel free to use the design in your private/educational projects, but don't try to sell the design or products based
-// on it without getting my consent first.
+// OpenMower is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
+// License as published by the Free Software Foundation, version 3 of the License.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// OpenMower is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+// warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 //
+// You should have received a copy of the GNU General Public License along with OpenMower. If not, see
+// <https://www.gnu.org/licenses/>.
 //
 #include "ros/ros.h"
 
@@ -30,23 +27,14 @@
 #include "../../../services/service_ids.h"
 #include "SimRobot.h"
 #include "dynamic_reconfigure/server.h"
-#include "geometry_msgs/PoseWithCovarianceStamped.h"
-#include "geometry_msgs/Twist.h"
 #include "mower_map/GetDockingPointSrv.h"
-#include "mower_msgs/EmergencyStopSrv.h"
-#include "mower_msgs/MowerControlSrv.h"
-#include "mower_msgs/Status.h"
 #include "mower_simulation/MowerSimulationConfig.h"
-#include "nav_msgs/Odometry.h"
 #include "services/diff_drive_service/diff_drive_service.hpp"
 #include "services/emergency_service/emergency_service.hpp"
 #include "services/gps_service/gps_service.hpp"
 #include "services/imu_service/imu_service.hpp"
 #include "services/mower_service/mower_service.hpp"
 #include "services/power_service/power_service.hpp"
-#include "xbot_msgs/AbsolutePose.h"
-#include "xbot_positioning/GPSControlSrv.h"
-#include "xbot_positioning/SetPoseSrv.h"
 
 ros::Publisher status_pub;
 ros::Publisher cmd_vel_pub;
@@ -54,9 +42,9 @@ ros::Publisher pose_pub;
 ros::Publisher initial_pose_publisher;
 ros::ServiceClient docking_point_client;
 
-dynamic_reconfigure::Server<mower_simulation::MowerSimulationConfig> *reconfig_server;
+dynamic_reconfigure::Server<mower_simulation::MowerSimulationConfig>* reconfig_server;
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ros::init(argc, argv, "mower_simulation");
 
   ros::NodeHandle n;
@@ -67,10 +55,35 @@ int main(int argc, char **argv) {
 
   docking_point_client = n.serviceClient<mower_map::GetDockingPointSrv>("mower_map_service/get_docking_point");
 
+  ros::NodeHandle llParamNh("/ll");
+  std::string bind_ip = "0.0.0.0";
+  llParamNh.getParam("bind_ip", bind_ip);
+  ROS_INFO_STREAM("Bind IP (Mower Simulation): " << bind_ip);
+
   xbot::service::system::initSystem();
-  xbot::service::Io::start();
+  xbot::service::Io::start(bind_ip.c_str());
 
   SimRobot robot{paramNh};
+
+  // Move the robot to the docking station.
+  // TODO: Use a better way to make sure that the docking position is loaded.
+  mower_map::GetDockingPointSrv get_docking_point_srv;
+  for (int i = 0; i < 20; ++i) {
+    if (docking_point_client.call(get_docking_point_srv)) {
+      const auto& docking_pose = get_docking_point_srv.response.docking_pose;
+      if (docking_pose.position.x != 0 || docking_pose.position.y != 0) {
+        tf2::Quaternion quat;
+        tf2::fromMsg(docking_pose.orientation, quat);
+        tf2::Matrix3x3 m(quat);
+        double roll, pitch, yaw;
+        m.getRPY(roll, pitch, yaw);
+        robot.SetDockingPose(docking_pose.position.x, docking_pose.position.y, yaw);
+        robot.SetPosition(docking_pose.position.x, docking_pose.position.y, yaw);
+        break;
+      }
+    }
+    sleep(1);
+  }
 
   EmergencyService emergency_service{xbot::service_ids::EMERGENCY, robot};
   DiffDriveService diff_drive_service{xbot::service_ids::DIFF_DRIVE, robot};

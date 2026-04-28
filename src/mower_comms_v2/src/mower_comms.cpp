@@ -1,20 +1,17 @@
 //
 // Created by Clemens Elflein on 15.03.22.
-// Copyright (c) 2022 Clemens Elflein. All rights reserved.
+// Copyright (c) 2022 Clemens Elflein and OpenMower contributors. All rights reserved.
 //
-// This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
+// This file is part of OpenMower.
 //
-// Feel free to use the design in your private/educational projects, but don't try to sell the design or products based
-// on it without getting my consent first.
+// OpenMower is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
+// License as published by the Free Software Foundation, version 3 of the License.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// OpenMower is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+// warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 //
+// You should have received a copy of the GNU General Public License along with OpenMower. If not, see
+// <https://www.gnu.org/licenses/>.
 //
 #include <geometry_msgs/TwistStamped.h>
 #include <mower_msgs/ESCStatus.h>
@@ -28,12 +25,15 @@
 #include <sensor_msgs/Imu.h>
 #include <spdlog/sinks/callback_sink.h>
 #include <spdlog/spdlog.h>
+#include <std_msgs/String.h>
 
 #include "../../../services/service_ids.h"
 #include "DiffDriveServiceInterface.h"
 #include "EmergencyServiceInterface.h"
 #include "GpsServiceInterface.h"
+#include "HighLevelServiceInterface.h"
 #include "ImuServiceInterface.h"
+#include "InputServiceInterface.h"
 #include "MowerServiceInterface.h"
 #include "PowerServiceInterface.h"
 
@@ -45,6 +45,7 @@ ros::Publisher status_left_esc_pub;
 ros::Publisher status_right_esc_pub;
 ros::Publisher emergency_pub;
 ros::Publisher actual_twist_pub;
+ros::Publisher action_pub;
 
 ros::Publisher sensor_imu_pub;
 
@@ -56,24 +57,26 @@ std::unique_ptr<MowerServiceInterface> mower_service = nullptr;
 std::unique_ptr<ImuServiceInterface> imu_service = nullptr;
 std::unique_ptr<PowerServiceInterface> power_service = nullptr;
 std::unique_ptr<GpsServiceInterface> gps_service = nullptr;
+std::unique_ptr<InputServiceInterface> input_service = nullptr;
+std::unique_ptr<HighLevelServiceInterface> high_level_service = nullptr;
 
 xbot::serviceif::Context ctx{};
 
-bool setEmergencyStop(mower_msgs::EmergencyStopSrvRequest &req, mower_msgs::EmergencyStopSrvResponse &res) {
+bool setEmergencyStop(mower_msgs::EmergencyStopSrvRequest& req, mower_msgs::EmergencyStopSrvResponse& res) {
   // This should never be the case, also this is no race condition, because callback will only be called
   // after initialization whereas the service is created during intialization
   if (!emergency_service) return false;
 
-  emergency_service->SetEmergency(req.emergency);
+  emergency_service->SetHighLevelEmergency(req.emergency);
   return true;
 }
 
-void velReceived(const geometry_msgs::Twist::ConstPtr &msg) {
+void velReceived(const geometry_msgs::Twist::ConstPtr& msg) {
   if (!diff_drive_service) return;
   diff_drive_service->SendTwist(msg);
 }
 
-void rtcmReceived(const rtcm_msgs::Message &msg) {
+void rtcmReceived(const rtcm_msgs::Message& msg) {
   if (!gps_service) return;
   static std::vector<uint8_t> rtcm_buffer{};
   static ros::Time last_time_sent{0};
@@ -87,20 +90,24 @@ void rtcmReceived(const rtcm_msgs::Message &msg) {
   rtcm_buffer.clear();
 }
 
-void sendEmergencyHeartbeatTimerTask(const ros::TimerEvent &) {
+void sendEmergencyHeartbeatTimerTask(const ros::TimerEvent&) {
   emergency_service->Heartbeat();
 }
 
-void sendMowerEnabledTimerTask(const ros::TimerEvent &e) {
+void actionReceived(const std_msgs::String::ConstPtr& action) {
+  input_service->OnAction(action->data);
+}
+
+void sendMowerEnabledTimerTask(const ros::TimerEvent& e) {
   mower_service->Tick();
 }
 
-bool setMowEnabled(mower_msgs::MowerControlSrvRequest &req, mower_msgs::MowerControlSrvRequest &res) {
+bool setMowEnabled(mower_msgs::MowerControlSrvRequest& req, mower_msgs::MowerControlSrvResponse& res) {
   mower_service->SetMowerEnabled(req.mow_enabled);
   return true;
 }
 
-static void spdlog_cb(const spdlog::details::log_msg &msg) {
+static void spdlog_cb(const spdlog::details::log_msg& msg) {
   ros::console::Level level = ros::console::Level::Info;
   switch (msg.level) {
     case spdlog::level::level_enum::trace:
@@ -114,7 +121,7 @@ static void spdlog_cb(const spdlog::details::log_msg &msg) {
   ROS_LOG(level, ROSCONSOLE_DEFAULT_NAME, "%.*s", static_cast<int>(msg.payload.size()), msg.payload.data());
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ros::init(argc, argv, "mower_comms_v2");
 
   {
@@ -135,6 +142,8 @@ int main(int argc, char **argv) {
   // ros::Subscriber high_level_status_sub = n.subscribe("/mower_logic/current_state", 0, highLevelStatusReceived);
   ros::Timer publish_timer = n.createTimer(ros::Duration(0.5), sendEmergencyHeartbeatTimerTask);
   ros::Timer publish_timer_2 = n.createTimer(ros::Duration(5.0), sendMowerEnabledTimerTask);
+  action_pub = n.advertise<std_msgs::String>("xbot/action", 1);
+  ros::Subscriber action_sub = n.subscribe("xbot/action", 0, actionReceived, ros::TransportHints().tcpNoDelay(true));
 
   std::string bind_ip = "0.0.0.0";
   paramNh.getParam("bind_ip", bind_ip);
@@ -205,6 +214,7 @@ int main(int argc, char **argv) {
   float battery_critical_voltage;
   float battery_critical_high_voltage;
   float charge_current = -1;
+  float system_current = -1;
   if (!paramNh.getParam("services/power/battery_full_voltage", battery_full_voltage)) {
     ROS_ERROR("Need to set param: services/power/battery_full_voltage");
     return 1;
@@ -222,9 +232,10 @@ int main(int argc, char **argv) {
     return 1;
   }
   paramNh.getParam("services/power/charge_current", charge_current);
+  paramNh.getParam("services/power/system_current", system_current);
   power_service = std::make_unique<PowerServiceInterface>(
       xbot::service_ids::POWER, ctx, power_pub, battery_full_voltage, battery_empty_voltage, battery_critical_voltage,
-      battery_critical_high_voltage, charge_current);
+      battery_critical_high_voltage, charge_current, system_current);
   power_service->Start();
 
   // GPS service
@@ -240,10 +251,23 @@ int main(int argc, char **argv) {
   ROS_INFO_STREAM("Datum: " << datum_lat << ", " << datum_long << ", " << datum_height);
   gps_position_pub = n.advertise<xbot_msgs::AbsolutePose>("ll/position/gps", 1);
   nmea_pub = n.advertise<nmea_msgs::Sentence>("ll/position/gps/nmea", 1);
-  gps_service =
-      std::make_unique<GpsServiceInterface>(xbot::service_ids::GPS, ctx, gps_position_pub, nmea_pub, datum_lat,
-                                            datum_long, datum_height, baud_rate, protocol, gps_port_index);
+  bool absolute_coords = true;
+  paramNh.getParam("services/gps/absolute_coords", absolute_coords);
+  gps_service = std::make_unique<GpsServiceInterface>(xbot::service_ids::GPS, ctx, gps_position_pub, nmea_pub,
+                                                      datum_lat, datum_long, datum_height, baud_rate, protocol,
+                                                      gps_port_index, absolute_coords);
   gps_service->Start();
+
+  // Input service
+  {
+    std::string config_file = paramNh.param<std::string>("services/input/config_file", "");
+    input_service = std::make_unique<InputServiceInterface>(xbot::service_ids::INPUT, ctx, config_file, action_pub);
+    input_service->Start();
+  }
+
+  // HighLevel service
+  high_level_service = std::make_unique<HighLevelServiceInterface>(xbot::service_ids::HIGH_LEVEL, ctx);
+  high_level_service->Start();
 
   ros::spin();
 

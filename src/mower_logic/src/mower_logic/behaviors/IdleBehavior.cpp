@@ -1,41 +1,40 @@
 // Created by Clemens Elflein on 2/21/22.
-// Copyright (c) 2022 Clemens Elflein. All rights reserved.
+// Copyright (c) 2022 Clemens Elflein and OpenMower contributors. All rights reserved.
 //
-// This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
+// This file is part of OpenMower.
 //
-// Feel free to use the design in your private/educational projects, but don't try to sell the design or products based
-// on it without getting my consent first.
+// OpenMower is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
+// License as published by the Free Software Foundation, version 3 of the License.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// OpenMower is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+// warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 //
+// You should have received a copy of the GNU General Public License along with OpenMower. If not, see
+// <https://www.gnu.org/licenses/>.
 //
 #include "IdleBehavior.h"
 
 #include <mower_logic/PowerConfig.h>
 #include <mower_msgs/Power.h>
 
+#include "../utils.h"
 #include "PerimeterDocking.h"
 
 extern void stopMoving();
 extern void stopBlade();
 extern void setEmergencyMode(bool emergency);
 extern void setGPS(bool enabled);
-extern void setRobotPose(geometry_msgs::Pose &pose);
-extern void registerActions(std::string prefix, const std::vector<xbot_msgs::ActionInfo> &actions);
+extern void setRobotPose(geometry_msgs::Pose& pose);
+extern void registerActions(std::string prefix, const std::vector<xbot_msgs::ActionInfo>& actions);
 extern ros::Time rain_resume;
 
 extern ros::ServiceClient dockingPointClient;
 extern mower_msgs::Status getStatus();
 extern mower_msgs::Power getPower();
 extern mower_logic::MowerLogicConfig getConfig();
+extern void setConfig(mower_logic::MowerLogicConfig);
 extern ll::PowerConfig getPowerConfig();
-extern dynamic_reconfigure::Server<mower_logic::MowerLogicConfig> *reconfigServer;
+extern dynamic_reconfigure::Server<mower_logic::MowerLogicConfig>* reconfigServer;
 
 extern ros::ServiceClient mapClient;
 extern ros::ServiceClient dockingPointClient;
@@ -47,7 +46,7 @@ std::string IdleBehavior::state_name() {
   return "IDLE";
 }
 
-Behavior *IdleBehavior::execute() {
+Behavior* IdleBehavior::execute() {
   // Check, if we have a configured map. If not, print info and go to area recorder
   mower_map::GetMowingAreaSrv mapSrv;
   mapSrv.request.index = 0;
@@ -79,20 +78,25 @@ Behavior *IdleBehavior::execute() {
     const auto last_power = getPower();
 
     const bool automatic_mode = last_config.automatic_mode == eAutoMode::AUTO;
-    const bool active_semiautomatic_task = last_config.automatic_mode == eAutoMode::SEMIAUTO &&
-                                           shared_state->active_semiautomatic_task &&
-                                           !shared_state->semiautomatic_task_paused;
+    const bool active_semiautomatic_task =
+        last_config.automatic_mode == eAutoMode::SEMIAUTO && shared_state->active_semiautomatic_task;
     const bool rain_delay = last_config.rain_mode == 2 && ros::Time::now() < rain_resume;
     if (rain_delay) {
       ROS_INFO_STREAM_THROTTLE(300, "Rain delay: " << int((rain_resume - ros::Time::now()).toSec() / 60) << " minutes");
     }
-    const bool mower_ready = last_power.v_battery > last_power_config.battery_full_voltage &&
+
+    // Use first valid sensor
+    const float last_battery_v = utils::GetFirstValid(
+        {last_power.battery_voltage_adc, last_power.battery_voltage_bms, last_power.battery_voltage_chg});
+    const float last_charge_v = utils::GetFirstValid({last_power.charge_voltage_adc, last_power.charge_voltage_chg});
+
+    const bool mower_ready = last_battery_v > last_power_config.battery_full_voltage &&
                              last_status.mower_motor_temperature < last_config.motor_cold_temperature &&
                              !last_config.manual_pause_mowing && !rain_delay;
 
     if (manual_start_mowing || ((automatic_mode || active_semiautomatic_task) && mower_ready)) {
       // set the robot's position to the dock if we're actually docked
-      if (last_power.v_charge > 5.0) {
+      if (last_charge_v > 5.0) {
         if (PerimeterUndockingBehavior::configured(config)) return &PerimeterUndockingBehavior::INSTANCE;
         ROS_INFO_STREAM("Currently inside the docking station, we set the robot's pose to the docks pose.");
         setRobotPose(docking_pose_stamped.pose);
@@ -112,7 +116,7 @@ Behavior *IdleBehavior::execute() {
       return &IdleBehavior::INSTANCE;
     }
 
-    if (last_config.docking_redock && stay_docked && last_power.v_charge < 5.0) {
+    if (last_config.docking_redock && stay_docked && last_charge_v < 5.0) {
       ROS_WARN("We docked but seem to have lost contact with the charger.  Undocking and trying again!");
       return &UndockingBehavior::RETRY_INSTANCE;
     }
@@ -131,14 +135,14 @@ void IdleBehavior::enter() {
   // disable it, so that we don't start mowing immediately
   manual_start_mowing = false;
 
-  for (auto &a : actions) {
+  for (auto& a : actions) {
     a.enabled = true;
   }
   registerActions("mower_logic:idle", actions);
 }
 
 void IdleBehavior::exit() {
-  for (auto &a : actions) {
+  for (auto& a : actions) {
     a.enabled = false;
   }
   registerActions("mower_logic:idle", actions);
@@ -161,7 +165,10 @@ void IdleBehavior::command_home() {
 
 void IdleBehavior::command_start() {
   // We got start, so we can reset the last manual pause
-  shared_state->semiautomatic_task_paused = false;
+  auto config = getConfig();
+  config.manual_pause_mowing = false;
+  setConfig(config);
+
   manual_start_mowing = true;
 }
 

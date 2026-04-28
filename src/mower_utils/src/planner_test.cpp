@@ -1,14 +1,25 @@
-//
 // Created by Clemens Elflein on 22.02.22.
-// Copyright (c) 2022 Clemens Elflein. All rights reserved.
+// Copyright (c) 2022 Clemens Elflein and OpenMower contributors. All rights reserved.
 //
+// This file is part of OpenMower.
+//
+// OpenMower is free software: you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the Free Software
+// Foundation, version 3 of the License.
+//
+// OpenMower is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+// PARTICULAR PURPOSE. See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// OpenMower. If not, see <https://www.gnu.org/licenses/>.
 #include "mower_map/GetMowingAreaSrv.h"
 #include "ros/ros.h"
 #include "slic3r_coverage_planner/PlanPath.h"
 
 ros::ServiceClient pathClient, mapClient;
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ros::init(argc, argv, "planner_test");
 
   ros::NodeHandle n;

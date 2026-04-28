@@ -1,28 +1,25 @@
 // Created by Clemens Elflein on 2/21/22.
-// Copyright (c) 2022 Clemens Elflein. All rights reserved.
+// Copyright (c) 2022 Clemens Elflein and OpenMower contributors. All rights reserved.
 //
-// This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
+// This file is part of OpenMower.
 //
-// Feel free to use the design in your private/educational projects, but don't try to sell the design or products based
-// on it without getting my consent first.
+// OpenMower is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
+// License as published by the Free Software Foundation, version 3 of the License.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// OpenMower is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+// warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 //
+// You should have received a copy of the GNU General Public License along with OpenMower. If not, see
+// <https://www.gnu.org/licenses/>.
 //
 #include "AreaRecordingBehavior.h"
 
 extern ros::ServiceClient dockingPointClient;
 extern ros::ServiceClient emergencyClient;
-extern actionlib::SimpleActionClient<mbf_msgs::MoveBaseAction> *mbfClient;
-extern actionlib::SimpleActionClient<mbf_msgs::ExePathAction> *mbfClientExePath;
-extern ros::NodeHandle *n;
-extern void registerActions(std::string prefix, const std::vector<xbot_msgs::ActionInfo> &actions);
+extern actionlib::SimpleActionClient<mbf_msgs::MoveBaseAction>* mbfClient;
+extern actionlib::SimpleActionClient<mbf_msgs::ExePathAction>* mbfClientExePath;
+extern ros::NodeHandle* n;
+extern void registerActions(std::string prefix, const std::vector<xbot_msgs::ActionInfo>& actions);
 
 extern void stop();
 
@@ -34,7 +31,7 @@ std::string AreaRecordingBehavior::state_name() {
   return "AREA_RECORDING";
 }
 
-Behavior *AreaRecordingBehavior::execute() {
+Behavior* AreaRecordingBehavior::execute() {
   setGPS(true);
   bool error = false;
   ros::Rate inputDelay(ros::Duration().fromSec(0.1));
@@ -190,7 +187,7 @@ void AreaRecordingBehavior::enter() {
 }
 
 void AreaRecordingBehavior::exit() {
-  for (auto &a : actions) {
+  for (auto& a : actions) {
     a.enabled = false;
   }
   registerActions("mower_logic:area_recording", actions);
@@ -221,12 +218,12 @@ bool AreaRecordingBehavior::mower_enabled() {
   return manual_mowing;
 }
 
-void AreaRecordingBehavior::pose_received(const xbot_msgs::AbsolutePose::ConstPtr &msg) {
+void AreaRecordingBehavior::pose_received(const xbot_msgs::AbsolutePose::ConstPtr& msg) {
   last_pose = *msg;
   has_odom = true;
 }
 
-void AreaRecordingBehavior::joy_received(const sensor_msgs::Joy &joy_msg) {
+void AreaRecordingBehavior::joy_received(const sensor_msgs::Joy& joy_msg) {
   if (joy_msg.buttons[1] && !last_joy.buttons[1]) {
     // B was pressed. We toggle recording state
     ROS_INFO_STREAM("B PRESSED");
@@ -318,7 +315,7 @@ void AreaRecordingBehavior::record_mowing_received(std_msgs::Bool state_msg) {
   }
 }
 
-bool AreaRecordingBehavior::recordNewPolygon(geometry_msgs::Polygon &polygon, xbot_msgs::MapOverlay &resultOverlay) {
+bool AreaRecordingBehavior::recordNewPolygon(geometry_msgs::Polygon& polygon, xbot_msgs::MapOverlay& resultOverlay) {
   ROS_INFO_STREAM("recordNewPolygon");
 
   bool success = true;
@@ -352,7 +349,7 @@ bool AreaRecordingBehavior::recordNewPolygon(geometry_msgs::Polygon &polygon, xb
     poly_viz.color = "blue";
     resultOverlay.polygons.push_back(poly_viz);
   }
-  auto &poly_viz = resultOverlay.polygons.back();
+  auto& poly_viz = resultOverlay.polygons.back();
 
   while (true) {
     if (!ros::ok() || aborted) {
@@ -457,7 +454,7 @@ bool AreaRecordingBehavior::recordNewPolygon(geometry_msgs::Polygon &polygon, xb
   return success;
 }
 
-bool AreaRecordingBehavior::getDockingPosition(geometry_msgs::Pose &pos) {
+bool AreaRecordingBehavior::getDockingPosition(geometry_msgs::Pose& pos) {
   if (!has_first_docking_pos) {
     ROS_INFO_STREAM("Recording first docking position");
 
@@ -668,7 +665,7 @@ AreaRecordingBehavior::AreaRecordingBehavior() {
 
 void AreaRecordingBehavior::update_actions() {
   {
-    for (auto &a : actions) {
+    for (auto& a : actions) {
       a.enabled = false;
     }
     if (has_first_docking_pos) {

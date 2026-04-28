@@ -1,20 +1,17 @@
 //
 // Created by Clemens Elflein on 15.03.22.
-// Copyright (c) 2022 Clemens Elflein. All rights reserved.
+// Copyright (c) 2022 Clemens Elflein and OpenMower contributors. All rights reserved.
 //
-// This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
+// This file is part of OpenMower.
 //
-// Feel free to use the design in your private/educational projects, but don't try to sell the design or products based
-// on it without getting my consent first.
+// OpenMower is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
+// License as published by the Free Software Foundation, version 3 of the License.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// OpenMower is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+// warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 //
+// You should have received a copy of the GNU General Public License along with OpenMower. If not, see
+// <https://www.gnu.org/licenses/>.
 //
 #include <dynamic_reconfigure/client.h>
 #include <geometry_msgs/Twist.h>
@@ -81,8 +78,8 @@ double wheel_distance_m = 0.0;
 // LL/HL configuration
 struct ll_high_level_config llhl_config;
 
-dynamic_reconfigure::Client<mower_logic::MowerLogicConfig> *reconfigClient;
-dynamic_reconfigure::Client<ll::PowerConfig> *powerReconfigClient;
+dynamic_reconfigure::Client<mower_logic::MowerLogicConfig>* reconfigClient;
+dynamic_reconfigure::Client<ll::PowerConfig>* powerReconfigClient;
 mower_logic::MowerLogicConfig mower_logic_config;
 ll::PowerConfig power_config;
 
@@ -95,9 +92,9 @@ boost::crc_ccitt_type crc;
 
 mower_msgs::HighLevelStatus last_high_level_status;
 
-xesc_driver::XescDriver *mow_xesc_interface;
-xesc_driver::XescDriver *left_xesc_interface;
-xesc_driver::XescDriver *right_xesc_interface;
+xesc_driver::XescDriver* mow_xesc_interface;
+xesc_driver::XescDriver* left_xesc_interface;
+xesc_driver::XescDriver* right_xesc_interface;
 
 // True, if we have wheel ticks (i.e. last_ticks is valid)
 bool has_ticks;
@@ -153,20 +150,20 @@ void publishActuators() {
   crc.process_bytes(&heartbeat, sizeof(struct ll_heartbeat) - 2);
   heartbeat.crc = crc.checksum();
 
-  size_t encoded_size = cobs.encode((uint8_t *)&heartbeat, sizeof(struct ll_heartbeat), out_buf);
+  size_t encoded_size = cobs.encode((uint8_t*)&heartbeat, sizeof(struct ll_heartbeat), out_buf);
   out_buf[encoded_size] = 0;
   encoded_size++;
 
   if (serial_port.isOpen() && allow_send) {
     try {
       serial_port.write(out_buf, encoded_size);
-    } catch (std::exception &e) {
+    } catch (std::exception& e) {
       ROS_ERROR_STREAM("Error writing to serial port");
     }
   }
 }
 
-void convertStatus(xesc_msgs::XescStateStamped &vesc_status, mower_msgs::ESCStatus &ros_esc_status) {
+void convertStatus(xesc_msgs::XescStateStamped& vesc_status, mower_msgs::ESCStatus& ros_esc_status) {
   if (vesc_status.state.connection_state != xesc_msgs::XescState::XESC_CONNECTION_STATE_CONNECTED &&
       vesc_status.state.connection_state != xesc_msgs::XescState::XESC_CONNECTION_STATE_CONNECTED_INCOMPATIBLE_FW) {
     // ESC is disconnected
@@ -186,8 +183,8 @@ void convertStatus(xesc_msgs::XescStateStamped &vesc_status, mower_msgs::ESCStat
   ros_esc_status.temperature_pcb = vesc_status.state.temperature_pcb;
 }
 
-void convertStatus(xesc_msgs::XescStateStamped &vesc_status, uint8_t &esc_status, double &esc_temperature,
-                   double &esc_current, double &motor_temperature, double &motor_rpm) {
+void convertStatus(xesc_msgs::XescStateStamped& vesc_status, uint8_t& esc_status, double& esc_temperature,
+                   double& esc_current, double& motor_temperature, double& motor_rpm) {
   if (vesc_status.state.connection_state != xesc_msgs::XescState::XESC_CONNECTION_STATE_CONNECTED &&
       vesc_status.state.connection_state != xesc_msgs::XescState::XESC_CONNECTION_STATE_CONNECTED_INCOMPATIBLE_FW) {
     // ESC is disconnected
@@ -219,7 +216,7 @@ void publishStatus() {
   }
 
   status_msg.raspberry_pi_power = (last_ll_status.status_bitmask & 0b00000010) != 0;
-  status_msg.gps_power = (last_ll_status.status_bitmask & 0b00000100) != 0;
+  status_msg.is_charging = (last_ll_status.status_bitmask & 0b00000100) != 0;
   status_msg.esc_power = (last_ll_status.status_bitmask & 0b00001000) != 0;
   status_msg.rain_detected = (last_ll_status.status_bitmask & 0b00010000) != 0;
   status_msg.sound_module_available = (last_ll_status.status_bitmask & 0b00100000) != 0;
@@ -247,8 +244,8 @@ void publishStatus() {
 
   mower_msgs::Power power_msg{};
   power_msg.stamp = status_msg.stamp;
-  power_msg.v_battery = last_ll_status.v_system;
-  power_msg.v_charge = last_ll_status.v_charge;
+  power_msg.battery_voltage_adc = last_ll_status.v_system;
+  power_msg.charge_voltage_adc = last_ll_status.v_charge;
   power_msg.charge_current = last_ll_status.charging_current;
   power_msg.charger_enabled = (last_ll_status.status_bitmask & LL_STATUS_BIT_CHARGING) != 0;
   power_msg.charger_status = "N/A";
@@ -318,7 +315,7 @@ void publishStatus() {
   }
 }
 
-std::string getHallConfigsString(const HallConfig *hall_configs, const size_t size) {
+std::string getHallConfigsString(const HallConfig* hall_configs, const size_t size) {
   std::string str;
 
   // Parse hall_configs and build a readable string
@@ -352,7 +349,7 @@ void publishLowLevelConfig(const uint8_t pkt_type) {
   memcpy(&buf[1], &llhl_config, sizeof(struct ll_high_level_config));
 
   // Member access to buffer
-  struct ll_high_level_config *buf_config = (struct ll_high_level_config *)&buf[1];
+  struct ll_high_level_config* buf_config = (struct ll_high_level_config*)&buf[1];
 
   // CRC
   crc.reset();
@@ -384,7 +381,7 @@ void publishLowLevelConfig(const uint8_t pkt_type) {
         getHallConfigsString(buf_config->hall_configs, MAX_HALL_INPUTS).c_str());
 
     serial_port.write(out_buf, encoded_size);
-  } catch (std::exception &e) {
+  } catch (std::exception& e) {
     ROS_ERROR_STREAM("Error writing to serial port");
   }
 }
@@ -420,13 +417,13 @@ struct {
   };
 } configTracker;
 
-void publishActuatorsTimerTask(const ros::TimerEvent &timer_event) {
+void publishActuatorsTimerTask(const ros::TimerEvent& timer_event) {
   publishActuators();
   publishStatus();
   configTracker.check();
 }
 
-bool setMowEnabled(mower_msgs::MowerControlSrvRequest &req, mower_msgs::MowerControlSrvResponse &res) {
+bool setMowEnabled(mower_msgs::MowerControlSrvRequest& req, mower_msgs::MowerControlSrvResponse& res) {
   if (req.mow_enabled && !is_emergency()) {
     target_speed_mow = req.mow_direction ? 1 : -1;
   } else {
@@ -436,7 +433,7 @@ bool setMowEnabled(mower_msgs::MowerControlSrvRequest &req, mower_msgs::MowerCon
   return true;
 }
 
-bool setEmergencyStop(mower_msgs::EmergencyStopSrvRequest &req, mower_msgs::EmergencyStopSrvResponse &res) {
+bool setEmergencyStop(mower_msgs::EmergencyStopSrvRequest& req, mower_msgs::EmergencyStopSrvResponse& res) {
   if (req.emergency) {
     ROS_ERROR_STREAM("Setting emergency!!");
     ll_clear_emergency = false;
@@ -449,7 +446,7 @@ bool setEmergencyStop(mower_msgs::EmergencyStopSrvRequest &req, mower_msgs::Emer
   return true;
 }
 
-void highLevelStatusReceived(const mower_msgs::HighLevelStatus::ConstPtr &msg) {
+void highLevelStatusReceived(const mower_msgs::HighLevelStatus::ConstPtr& msg) {
   struct ll_high_level_state hl_state = {.type = PACKET_ID_LL_HIGH_LEVEL_STATE,
                                          .current_mode = msg->state,
                                          .gps_quality = static_cast<uint8_t>(msg->gps_quality_percent * 100.0)};
@@ -458,20 +455,20 @@ void highLevelStatusReceived(const mower_msgs::HighLevelStatus::ConstPtr &msg) {
   crc.process_bytes(&hl_state, sizeof(struct ll_high_level_state) - 2);
   hl_state.crc = crc.checksum();
 
-  size_t encoded_size = cobs.encode((uint8_t *)&hl_state, sizeof(struct ll_high_level_state), out_buf);
+  size_t encoded_size = cobs.encode((uint8_t*)&hl_state, sizeof(struct ll_high_level_state), out_buf);
   out_buf[encoded_size] = 0;
   encoded_size++;
 
   if (serial_port.isOpen() && allow_send) {
     try {
       serial_port.write(out_buf, encoded_size);
-    } catch (std::exception &e) {
+    } catch (std::exception& e) {
       ROS_ERROR_STREAM("Error writing to serial port");
     }
   }
 }
 
-void velReceived(const geometry_msgs::Twist::ConstPtr &msg) {
+void velReceived(const geometry_msgs::Twist::ConstPtr& msg) {
   // TODO: update this to rad/s values and implement xESC speed control
   last_cmd_vel = ros::Time::now();
   speed_r = msg->linear.x + 0.5 * wheel_distance_m * msg->angular.z;
@@ -489,7 +486,7 @@ void velReceived(const geometry_msgs::Twist::ConstPtr &msg) {
   }
 }
 
-void handleLowLevelUIEvent(struct ll_ui_event *ui_event) {
+void handleLowLevelUIEvent(struct ll_ui_event* ui_event) {
   ROS_INFO_STREAM("Got UI button with code:" << +ui_event->button_id << " and duration: " << +ui_event->press_duration);
 
   mower_msgs::HighLevelControlSrv srv;
@@ -540,7 +537,7 @@ void handleLowLevelUIEvent(struct ll_ui_event *ui_event) {
  * @return &bool get set to true if t_cur and t_new differ, otherwise changed doesn't get touched
  */
 template <typename T>
-T getNewSetChanged(const T t_cur, const T t_new, bool &changed) {
+T getNewSetChanged(const T t_cur, const T t_new, bool& changed) {
   bool equal;
   if (std::is_floating_point<T>::value)
     equal = fabs(t_cur - t_new) < std::numeric_limits<T>::epsilon();
@@ -558,7 +555,7 @@ T getNewSetChanged(const T t_cur, const T t_new, bool &changed) {
 /**
  * Handle config packet on receive from LL (LL->HL config packet response)
  */
-void handleLowLevelConfig(const uint8_t *buffer, const size_t size) {
+void handleLowLevelConfig(const uint8_t* buffer, const size_t size) {
   // This is a flexible length packet where the size may vary when ll_high_level_config struct got enhanced only on one
   // side. If payload size is larger than our struct size, ensure that we only copy those we know of = our struct size.
   // If payload size is smaller than our struct size, copy only the payload we got, but ensure that the unsent member(s)
@@ -600,13 +597,14 @@ void handleLowLevelConfig(const uint8_t *buffer, const size_t size) {
   mower_logic_config.cu_rain_threshold = getNewSetChanged<int>(mower_logic_config.cu_rain_threshold, llhl_config.rain_threshold, logic_config_dirty);
   mower_logic_config.emergency_lift_period = getNewSetChanged<int>(mower_logic_config.emergency_lift_period, llhl_config.lift_period, logic_config_dirty);
   mower_logic_config.emergency_tilt_period = getNewSetChanged<int>(mower_logic_config.emergency_tilt_period, llhl_config.tilt_period, logic_config_dirty);
+  mower_logic_config.shutdown_esc_max_pitch = getNewSetChanged<int>(mower_logic_config.shutdown_esc_max_pitch, llhl_config.shutdown_esc_max_pitch, logic_config_dirty);
   // clang-format on
 
   if (logic_config_dirty) reconfigClient->setConfiguration(mower_logic_config);
   if (power_config_dirty) powerReconfigClient->setConfiguration(power_config);
 }
 
-void handleLowLevelStatus(struct ll_status *status) {
+void handleLowLevelStatus(struct ll_status* status) {
   static ros::Time last_ll_status_update(ros::Time::now());
 
   std::unique_lock<std::mutex> lk(ll_status_mutex);
@@ -618,7 +616,7 @@ void handleLowLevelStatus(struct ll_status *status) {
   last_ll_status_update = ros::Time::now();
 }
 
-void handleLowLevelIMU(struct ll_imu *imu) {
+void handleLowLevelIMU(struct ll_imu* imu) {
   mower_msgs::ImuRaw imu_msg;
   imu_msg.dt = imu->dt_millis;
   imu_msg.ax = imu->acceleration_mss[0];
@@ -658,10 +656,11 @@ void checkAndSendConfig() {
   llhl_config.v_battery_full = getNewSetChanged<double>(llhl_config.v_battery_full, power_config.battery_full_voltage, dirty);
   llhl_config.lift_period = getNewSetChanged<int>(llhl_config.lift_period, mower_logic_config.emergency_lift_period, dirty);
   llhl_config.tilt_period = getNewSetChanged<int>(llhl_config.tilt_period, mower_logic_config.emergency_tilt_period, dirty);
+  llhl_config.shutdown_esc_max_pitch = getNewSetChanged<int>(llhl_config.shutdown_esc_max_pitch, mower_logic_config.shutdown_esc_max_pitch, dirty);
   // clang-format on
 
   // Parse emergency_input_config and set hall_configs
-  char *token = strtok(strdup(mower_logic_config.emergency_input_config.c_str()), ",");
+  char* token = strtok(strdup(mower_logic_config.emergency_input_config.c_str()), ",");
   bool low_active;
   unsigned int hall_idx = 0;
   while (token != NULL) {
@@ -684,7 +683,7 @@ void checkAndSendConfig() {
   if (dirty) configTracker.setDirty();
 }
 
-void reconfigCB(const mower_logic::MowerLogicConfig &config) {
+void reconfigCB(const mower_logic::MowerLogicConfig& config) {
   ROS_INFO_STREAM("mower_comms received new mower_logic config");
 
   mower_logic_config = config;
@@ -692,7 +691,7 @@ void reconfigCB(const mower_logic::MowerLogicConfig &config) {
   checkAndSendConfig();
 }
 
-void powerReconfigCB(const ll::PowerConfig &config) {
+void powerReconfigCB(const ll::PowerConfig& config) {
   ROS_INFO_STREAM("mower_comms received new mower_logic config");
 
   power_config = config;
@@ -700,18 +699,18 @@ void powerReconfigCB(const ll::PowerConfig &config) {
   checkAndSendConfig();
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ros::init(argc, argv, "mower_comms_v1");
 
   sensor_imu_msg.header.seq = 0;
 
   ros::NodeHandle n;
   ros::NodeHandle paramNh("~");
-  ros::NodeHandle leftParamNh("~/left_xesc");
-  ros::NodeHandle mowerParamNh("~/mower_xesc");
-  ros::NodeHandle rightParamNh("~/right_xesc");
+  ros::NodeHandle leftParamNh("~/services/diff_drive/left_xesc");
+  ros::NodeHandle mowerParamNh("~/services/diff_drive/mower_xesc");
+  ros::NodeHandle rightParamNh("~/services/diff_drive/right_xesc");
   ros::NodeHandle mowerLogicParamNh("/mower_logic");
-  ros::NodeHandle powerParamNh("/ll/services/power");
+  ros::NodeHandle powerParamNh("~/services/power");
 
   highLevelClient = n.serviceClient<mower_msgs::HighLevelControlSrv>("mower_service/high_level_control");
 
@@ -729,8 +728,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  paramNh.getParam("wheel_ticks_per_m", wheel_ticks_per_m);
-  paramNh.getParam("wheel_distance_m", wheel_distance_m);
+  paramNh.getParam("services/diff_drive/ticks_per_m", wheel_ticks_per_m);
+  paramNh.getParam("services/diff_drive/wheel_distance_m", wheel_distance_m);
 
   ROS_INFO_STREAM("Wheel ticks [1/m]: " << wheel_ticks_per_m);
   ROS_INFO_STREAM("Wheel distance [m]: " << wheel_distance_m);
@@ -740,12 +739,12 @@ int main(int argc, char **argv) {
   // Some generic settings from param server (non- dynamic)
   llhl_config.options.ignore_charging_current =
       paramNh.param("/mower_logic/ignore_charging_current", false) ? OptionState::ON : OptionState::OFF;
-  llhl_config.options.dfp_is_5v = paramNh.param("dfp_is_5v", false) ? OptionState::ON : OptionState::OFF;
-  llhl_config.volume = paramNh.param("volume", -1);
+  llhl_config.options.dfp_is_5v = paramNh.param("services/sound/dfp_is_5v", false) ? OptionState::ON : OptionState::OFF;
+  llhl_config.volume = paramNh.param("services/sound/volume", -1);
   llhl_config.options.background_sounds =
-      paramNh.param("background_sounds", false) ? OptionState::ON : OptionState::OFF;
+      paramNh.param("services/sound/background_sounds", false) ? OptionState::ON : OptionState::OFF;
   // ISO-639-1 (2 char) language code
-  strncpy(llhl_config.language, paramNh.param<std::string>("language", "en").c_str(), 2);
+  strncpy(llhl_config.language, paramNh.param<std::string>("services/sound/language", "en").c_str(), 2);
 
   // Setup XESC interfaces
   if (mowerParamNh.hasParam("xesc_type")) {
@@ -798,7 +797,7 @@ int main(int argc, char **argv) {
         // this will only be set if no error was set
 
         allow_send = true;
-      } catch (std::exception &e) {
+      } catch (std::exception& e) {
         retryDelay.sleep();
         ROS_ERROR_STREAM("Error during reconnect.");
       }
@@ -806,7 +805,7 @@ int main(int argc, char **argv) {
     size_t bytes_read = 0;
     try {
       bytes_read = serial_port.read(buffer + read, 1);
-    } catch (std::exception &e) {
+    } catch (std::exception& e) {
       ROS_ERROR_STREAM("Error reading serial_port. Closing Connection.");
       serial_port.close();
       retryDelay.sleep();
@@ -833,27 +832,27 @@ int main(int argc, char **argv) {
           // bytes.
           crc.process_bytes(buffer_decoded, data_size - 2);
           uint16_t checksum = crc.checksum();
-          uint16_t received_checksum = *(uint16_t *)(buffer_decoded + data_size - 2);
+          uint16_t received_checksum = *(uint16_t*)(buffer_decoded + data_size - 2);
           if (checksum == received_checksum) {
             // Packet checksum is OK, process it
             switch (buffer_decoded[0]) {
               case PACKET_ID_LL_STATUS:
                 if (data_size == sizeof(struct ll_status)) {
-                  handleLowLevelStatus((struct ll_status *)buffer_decoded);
+                  handleLowLevelStatus((struct ll_status*)buffer_decoded);
                 } else {
                   ROS_INFO_STREAM("Low Level Board sent a valid packet with the wrong size. Type was STATUS");
                 }
                 break;
               case PACKET_ID_LL_IMU:
                 if (data_size == sizeof(struct ll_imu)) {
-                  handleLowLevelIMU((struct ll_imu *)buffer_decoded);
+                  handleLowLevelIMU((struct ll_imu*)buffer_decoded);
                 } else {
                   ROS_INFO_STREAM("Low Level Board sent a valid packet with the wrong size. Type was IMU");
                 }
                 break;
               case PACKET_ID_LL_UI_EVENT:
                 if (data_size == sizeof(struct ll_ui_event)) {
-                  handleLowLevelUIEvent((struct ll_ui_event *)buffer_decoded);
+                  handleLowLevelUIEvent((struct ll_ui_event*)buffer_decoded);
                 } else {
                   ROS_INFO_STREAM("Low Level Board sent a valid packet with the wrong size. Type was UI_EVENT");
                 }
