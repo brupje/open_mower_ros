@@ -22,7 +22,6 @@
 // Rosbag for reading/writing the map to a file
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
-#include <exception>
 
 // Include Messages
 #include "geometry_msgs/Point32.h"
@@ -206,21 +205,6 @@ xbot_rpc::RpcProvider rpc_provider("mower_map_service", {{
 /**
  * Convert a geometry_msgs::Polygon to our internal Polygon struct
  */
-void fromMessage(geometry_msgs::Polygon &poly, grid_map::Polygon &out) {
-  out.removeVertices();
-
-  if (poly.points.empty()) {
-    ROS_ERROR_STREAM("Error loading Polygon, length is 0");
-    throw std::exception();
-  }
-
-  for (auto &point : poly.points) {
-    grid_map::Position pos;
-    pos.x() = point.x;
-    pos.y() = point.y;
-    out.addVertex(pos);
-  }
-
 Polygon geometryPolygonToInternal(const geometry_msgs::Polygon& poly) {
   Polygon result;
   for (const auto& point : poly.points) {
@@ -588,42 +572,7 @@ bool getMowingArea(mower_map::GetMowingAreaSrvRequest& req, mower_map::GetMowing
   return true;
 }
 
-bool convertToNavigationArea(mower_map::ConvertToNavigationAreaSrvRequest &req,
-                             mower_map::ConvertToNavigationAreaSrvResponse &res) {
-  ROS_INFO_STREAM("Got convert to nav area call with index: " << req.index);
-
-  if (req.index >= mowing_areas.size()) {
-    ROS_ERROR_STREAM("No mowing area with index: " << req.index);
-    return false;
-  }
-
-  navigation_areas.push_back(mowing_areas[req.index]);
-
-  mowing_areas.erase(mowing_areas.begin() + req.index);
-
-  saveMapToFile();
-  buildMap();
-
-  return true;
-}
-
-bool appendMapFromFile(mower_map::AppendMapSrvRequest &req, mower_map::AppendMapSrvResponse &res) {
-  ROS_INFO_STREAM("Appending maps from: " << req.bagfile);
-
-  readMapFromFile(req.bagfile, true);
-
-  saveMapToFile();
-  try {
-    buildMap();
-  } catch (std::exception &e) {
-    ROS_ERROR_STREAM("Error building map");
-    return false;
-  }
-
-  return true;
-}
-
-bool setDockingPoint(mower_map::SetDockingPointSrvRequest &req, mower_map::SetDockingPointSrvResponse &res) {
+bool setDockingPoint(mower_map::SetDockingPointSrvRequest& req, mower_map::SetDockingPointSrvResponse& res) {
   ROS_INFO_STREAM("Setting Docking Point");
 
   // Convert quaternion to heading
@@ -803,8 +752,6 @@ int main(int argc, char** argv) {
   } else {
     readMapFromFile();
   }
-
-  buildMap();
 
   try {
     buildMap();
