@@ -46,6 +46,7 @@
 #include "mower_msgs/HighLevelStatus.h"
 #include "mower_msgs/MowerControlSrv.h"
 #include "mower_msgs/Status.h"
+#include "mower_msgs/StartInAreaSrv.h"
 #include "ros/ros.h"
 #include "slic3r_coverage_planner/PlanPath.h"
 #include "std_msgs/String.h"
