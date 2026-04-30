@@ -1,12 +1,16 @@
 [submodule "src/lib/ntrip_client"]
-	path = src/lib/ntrip_client
-	url = https://github.com/xtech/ntrip_client.git
+        path = src/lib/ntrip_client
+        url = https://github.com/xtech/ntrip_client.git
+        branch = ros
 [submodule "src/lib/xbot_driver_gps"]
-	path = src/lib/xbot_driver_gps
-	url = https://github.com/brupje/xbot_driver_gps.git
+        path = src/lib/xbot_driver_gps
+        url = https://github.com/brupje/xbot_driver_gps.git
+        branch = main
 [submodule "src/lib/xbot_framework"]
-	path = src/lib/xbot_framework
-	url = https://github.com/xtech/xbot_framework.git
+        path = src/lib/xbot_framework
+        url = https://github.com/xtech/xbot_framework.git
+        branch = main
 [submodule "services"]
-	path = services
-	url = https://github.com/xtech/definitions-open-mower.git
+        path = services
+        url = https://github.com/xtech/definitions-open-mower.git
+        branch = main
