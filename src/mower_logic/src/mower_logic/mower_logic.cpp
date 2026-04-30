@@ -460,13 +460,12 @@ void checkSafety(const ros::TimerEvent& timer_event) {
       high_level_status.gps_quality_percent = -1;
     }
 
+    ROS_WARN_STREAM_THROTTLE(
+        1, std::string("Low quality GPS: orientationvalid=") + (last_pose.orientation_valid ? "Yes" : "No") +
+               "Last postion accuracy: " + std::to_string(last_pose.position_accuracy) +
+               "Max postion accuracy: " + std::to_string(last_config.max_position_accuracy) + "last_pose.flags: " +
+               ((last_pose.flags & xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE) ? "Yes" : "No")
 
-    ROS_WARN_STREAM_THROTTLE(1, std::string("Low quality GPS: orientationvalid=")
-      + (last_pose.orientation_valid? "Yes" :"No"  ) 
-      + "Last postion accuracy: " +  std::to_string(last_pose.position_accuracy)
-      + "Max postion accuracy: " +  std::to_string(last_config.max_position_accuracy)
-      + "last_pose.flags: " +  ((last_pose.flags & xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE )? "Yes" :"No")
-    
     );
   }
 
@@ -575,10 +574,10 @@ void reconfigureCB(mower_logic::MowerLogicConfig& c, uint32_t level) {
   last_config = c;
 }
 
-bool startInAreaCommand(mower_msgs::StartInAreaSrvRequest &req, mower_msgs::StartInAreaSrvResponse &res) {
+bool startInAreaCommand(mower_msgs::StartInAreaSrvRequest& req, mower_msgs::StartInAreaSrvResponse& res) {
   ROS_INFO_STREAM("Starting in area " << std::to_string(req.area) << ". Clearing path on start");
   // set the current area
- 
+
   // start
 
   if (currentBehavior) {
@@ -591,7 +590,7 @@ bool startInAreaCommand(mower_msgs::StartInAreaSrvRequest &req, mower_msgs::Star
   return true;
 }
 
-bool highLevelCommand(mower_msgs::HighLevelControlSrvRequest &req, mower_msgs::HighLevelControlSrvResponse &res) {
+bool highLevelCommand(mower_msgs::HighLevelControlSrvRequest& req, mower_msgs::HighLevelControlSrvResponse& res) {
   switch (req.command) {
     case mower_msgs::HighLevelControlSrvRequest::COMMAND_HOME:
       ROS_INFO_STREAM("COMMAND_HOME");
