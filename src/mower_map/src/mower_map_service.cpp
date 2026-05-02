@@ -541,7 +541,12 @@ bool addMowingArea(mower_map::AddMowingAreaSrvRequest& req, mower_map::AddMowing
   }
 
   saveMapToFile();
-  buildMap();
+  try {
+    buildMap();
+  } catch (std::exception& e) {
+    ROS_ERROR_STREAM("Error building map");
+    return false;
+  }
   return true;
 }
 
@@ -742,7 +747,12 @@ int main(int argc, char** argv) {
     readMapFromFile();
   }
 
-  buildMap();
+  try {
+    buildMap();
+  } catch (std::exception& e) {
+    ROS_ERROR_STREAM("Error building map");
+    saveMapToFile();
+  }
 
   ros::ServiceServer add_area_srv = n.advertiseService("mower_map_service/add_mowing_area", addMowingArea);
   ros::ServiceServer get_area_srv = n.advertiseService("mower_map_service/get_mowing_area", getMowingArea);

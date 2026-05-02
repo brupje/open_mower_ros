@@ -45,6 +45,7 @@
 #include "mower_msgs/HighLevelControlSrv.h"
 #include "mower_msgs/HighLevelStatus.h"
 #include "mower_msgs/MowerControlSrv.h"
+#include "mower_msgs/StartInAreaSrv.h"
 #include "mower_msgs/Status.h"
 #include "ros/ros.h"
 #include "slic3r_coverage_planner/PlanPath.h"
@@ -458,7 +459,14 @@ void checkSafety(const ros::TimerEvent& timer_event) {
       // set this if we don't even have an orientation
       high_level_status.gps_quality_percent = -1;
     }
-    ROS_WARN_STREAM_THROTTLE(1, "Low quality GPS");
+
+    ROS_WARN_STREAM_THROTTLE(
+        1, std::string("Low quality GPS: orientationvalid=") + (last_pose.orientation_valid ? "Yes" : "No") +
+               "Last postion accuracy: " + std::to_string(last_pose.position_accuracy) +
+               "Max postion accuracy: " + std::to_string(last_config.max_position_accuracy) + "last_pose.flags: " +
+               ((last_pose.flags & xbot_msgs::AbsolutePose::FLAG_SENSOR_FUSION_RECENT_ABSOLUTE_POSE) ? "Yes" : "No")
+
+    );
   }
 
   bool gpsTimeout = ros::Time::now() - last_good_gps > ros::Duration(last_config.gps_timeout);
@@ -564,6 +572,22 @@ void checkSafety(const ros::TimerEvent& timer_event) {
 void reconfigureCB(mower_logic::MowerLogicConfig& c, uint32_t level) {
   ROS_INFO_STREAM("om_mower_logic: Setting mower_logic config");
   last_config = c;
+}
+
+bool startInAreaCommand(mower_msgs::StartInAreaSrvRequest& req, mower_msgs::StartInAreaSrvResponse& res) {
+  ROS_INFO_STREAM("Starting in area " << std::to_string(req.area) << ". Clearing path on start");
+  // set the current area
+
+  // start
+
+  if (currentBehavior) {
+    currentBehavior->reset();
+    ROS_INFO_STREAM("Current behavior exists: " << currentBehavior->state_name());
+    currentBehavior->command_start();
+  }
+
+  MowingBehavior::INSTANCE.setCurrentArea(req.area);
+  return true;
 }
 
 bool highLevelCommand(mower_msgs::HighLevelControlSrvRequest& req, mower_msgs::HighLevelControlSrvResponse& res) {
@@ -697,6 +721,7 @@ int main(int argc, char** argv) {
   ros::Subscriber action = n->subscribe("xbot/action", 0, actionReceived, ros::TransportHints().tcpNoDelay(true));
 
   ros::ServiceServer high_level_control_srv = n->advertiseService("mower_service/high_level_control", highLevelCommand);
+  ros::ServiceServer start_in_area_srv = n->advertiseService("mower_service/start_in_area", startInAreaCommand);
 
   ros::AsyncSpinner asyncSpinner(1);
   asyncSpinner.start();

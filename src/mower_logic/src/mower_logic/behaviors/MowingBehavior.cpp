@@ -37,6 +37,7 @@ extern actionlib::SimpleActionClient<mbf_msgs::ExePathAction>* mbfClientExePath;
 extern mower_logic::MowerLogicConfig getConfig();
 extern void setConfig(mower_logic::MowerLogicConfig);
 
+extern void stopBlade();
 extern void registerActions(std::string prefix, const std::vector<xbot_msgs::ActionInfo>& actions);
 
 MowingBehavior MowingBehavior::INSTANCE;
@@ -366,6 +367,15 @@ bool MowingBehavior::execute_mowing_plan() {
             skip_area = false;
             return true;
           }
+          if (goto_area) {
+            ROS_INFO_STREAM("MowingBehavior: Go to specific area was requested");
+            // remove all paths in current area and return true
+            mowerEnabled = false;
+            mbfClientExePath->cancelAllGoals();
+            currentMowingPaths.clear();
+            goto_area = false;
+            return false;
+          }
           if (skip_path) {
             skip_path = false;
             currentMowingPath++;
@@ -479,6 +489,14 @@ bool MowingBehavior::execute_mowing_plan() {
             mowerEnabled = false;
             currentMowingPaths.clear();
             skip_area = false;
+            return true;
+          }
+          if (goto_area) {
+            ROS_INFO_STREAM("MowingBehavior: Go to specific area was requested");
+            // remove all paths in current area and return true
+            mowerEnabled = false;
+            currentMowingPaths.clear();
+            goto_area = false;
             return true;
           }
           if (skip_path) {
@@ -726,4 +744,11 @@ bool MowingBehavior::restore_checkpoint() {
     bag.close();
   }
   return found;
+}
+
+void MowingBehavior::setCurrentArea(int newMowingArea) {
+  ROS_INFO_STREAM("Starting mowing at area " + std::to_string(newMowingArea));
+  stopBlade();
+  currentMowingArea = newMowingArea;
+  goto_area = true;
 }
