@@ -175,7 +175,7 @@ void AreaRecordingBehavior::enter() {
   auto last_config = getConfig();
   if (last_config.manual_pause_mowing) {
     ROS_INFO_STREAM("There was a manual pause, but we don't care");
-    last_config.manual_pause_mowing = true;
+    last_config.manual_pause_mowing = false;
     setConfig(last_config);
   }
 
