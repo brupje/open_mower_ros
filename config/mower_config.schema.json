@@ -222,6 +222,13 @@
                 "default": false,
                 "description": "True, to use Relative Positioning. If you are unsure keep at false.",
                 "x-environment-variable": "OM_USE_RELATIVE_POSITION"
+              },
+              "OM_GPS_CAN_DISABLE": {
+                "title": "GPS can be disabled",
+                "type": "boolean",
+                "default": true,
+                "description": "True, allow the software to disable GPS",
+                "x-environment-variable": "OM_GPS_CAN_DISABLE"
               }
             },
             "allOf": [
