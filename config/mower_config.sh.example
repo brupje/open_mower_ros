@@ -118,6 +118,10 @@ export OM_GPS_PROTOCOL=UBX
 # IF YOU DONT KNOW WHAT THIS IS, SET IT TO FALSE
 export OM_USE_F9R_SENSOR_FUSION=False
 
+# In some cases GPS can be disabled to enter a lower power state for example. But somw GPS modules don't
+# allow that, so it just adds a lot of warnings. OM_GPS_CAN_DISABLE=false just leaves GPS always on
+# export OM_GPS_CAN_DISABLE=true
+
 # Instead of communicating with the serial port socket directly, GPS data can be read from a TCP port.
 # export OM_GPS_DEVICE_TYPE="tcp"
 # export OM_GPS_TCP_HOSTNAME="127.0.0.1"

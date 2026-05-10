@@ -71,6 +71,7 @@ bool gps_enabled = true;
 int gps_outlier_count = 0;
 int valid_gps_samples = 0;
 int gps_message_throttle = 1;
+bool gps_can_disable = false;
 
 ros::Time last_gps_time(0.0);
 
@@ -206,6 +207,11 @@ void onTwistIn(const geometry_msgs::TwistStamped::ConstPtr &msg) {
 }
 
 bool setGpsState(xbot_positioning::GPSControlSrvRequest &req, xbot_positioning::GPSControlSrvResponse &res) {
+    if (!gps_can_disable) {
+        ROS_INFO_STREAM("Ignore update to GPS state, GPS cannot be disabled");
+        return true;
+    }
+
     gps_enabled = req.gps_enabled;
     return true;
 }
@@ -338,6 +344,7 @@ int main(int argc, char **argv) {
     paramNh.param("antenna_offset_x", antenna_offset_x, 0.0);
     paramNh.param("antenna_offset_y", antenna_offset_y, 0.0);
     paramNh.param("gps_message_throttle", gps_message_throttle, 1);
+    paramNh.param("gps_can_disable", gps_can_disable, true);
 
     core.setAntennaOffset(antenna_offset_x, antenna_offset_y);
 
